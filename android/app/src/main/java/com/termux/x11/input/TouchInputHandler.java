@@ -109,6 +109,88 @@ public class TouchInputHandler {
     private boolean ignoreGamepadEvents = false;
     private boolean threeFingerKeyboardTriggered = false;
 
+    // ── Touch Calibration & Transformation ──
+    public boolean touchInvertX = false;
+    public boolean touchInvertY = false;
+    public boolean touchSwapAxes = false;
+    public int touchRotation = 0;
+    public float touchScaleX = 1.0f;
+    public float touchScaleY = 1.0f;
+    public float touchOffsetX = 0.0f;
+    public float touchOffsetY = 0.0f;
+
+    private final Matrix touchCalibrationMatrix = new Matrix();
+    private boolean hasTouchCalibration = false;
+    private int lastCalibratedViewWidth = -1;
+    private int lastCalibratedViewHeight = -1;
+
+    public void updateTouchCalibration(
+            boolean invertX, boolean invertY, boolean swapAxes,
+            int rotationDegrees, float scaleX, float scaleY,
+            float offsetX, float offsetY) {
+        this.touchInvertX = invertX;
+        this.touchInvertY = invertY;
+        this.touchSwapAxes = swapAxes;
+        this.touchRotation = rotationDegrees;
+        this.touchScaleX = scaleX;
+        this.touchScaleY = scaleY;
+        this.touchOffsetX = offsetX;
+        this.touchOffsetY = offsetY;
+        this.lastCalibratedViewWidth = -1;
+        if (mTouchpadHandler != null) {
+            mTouchpadHandler.updateTouchCalibration(invertX, invertY, swapAxes, rotationDegrees, scaleX, scaleY, offsetX, offsetY);
+        }
+    }
+
+    private void recomputeTouchCalibrationMatrix(int width, int height) {
+        touchCalibrationMatrix.reset();
+        hasTouchCalibration = false;
+
+        if (width <= 0 || height <= 0) return;
+
+        boolean custom = touchInvertX || touchInvertY || touchSwapAxes ||
+                touchRotation != 0 || touchScaleX != 1.0f || touchScaleY != 1.0f ||
+                touchOffsetX != 0.0f || touchOffsetY != 0.0f;
+        if (!custom) return;
+
+        float cx = width / 2.0f;
+        float cy = height / 2.0f;
+
+        if (touchSwapAxes) {
+            touchCalibrationMatrix.postTranslate(-cx, -cy);
+            Matrix swapM = new Matrix();
+            swapM.setValues(new float[]{
+                0, 1, 0,
+                1, 0, 0,
+                0, 0, 1
+            });
+            touchCalibrationMatrix.postConcat(swapM);
+            touchCalibrationMatrix.postTranslate(cx, cy);
+        }
+
+        if (touchRotation != 0) {
+            touchCalibrationMatrix.postRotate(touchRotation, cx, cy);
+        }
+
+        if (touchInvertX || touchInvertY) {
+            float sx = touchInvertX ? -1.0f : 1.0f;
+            float sy = touchInvertY ? -1.0f : 1.0f;
+            touchCalibrationMatrix.postScale(sx, sy, cx, cy);
+        }
+
+        if (touchScaleX != 1.0f || touchScaleY != 1.0f) {
+            touchCalibrationMatrix.postScale(touchScaleX, touchScaleY, cx, cy);
+        }
+
+        if (touchOffsetX != 0.0f || touchOffsetY != 0.0f) {
+            touchCalibrationMatrix.postTranslate(touchOffsetX, touchOffsetY);
+        }
+
+        hasTouchCalibration = true;
+        lastCalibratedViewWidth = width;
+        lastCalibratedViewHeight = height;
+    }
+
     /**
      * Used for tracking swipe gestures. Only the Y-direction is needed for responding to swipe-up
      * or swipe-down.
@@ -308,6 +390,15 @@ public class TouchInputHandler {
             int offsetY = viewLocation[1] - view0Location[1];
 
             event.offsetLocation(-offsetX, -offsetY);
+        }
+
+        int vw = view.getWidth();
+        int vh = view.getHeight();
+        if (vw > 0 && vh > 0 && (vw != lastCalibratedViewWidth || vh != lastCalibratedViewHeight)) {
+            recomputeTouchCalibrationMatrix(vw, vh);
+        }
+        if (hasTouchCalibration) {
+            event.transform(touchCalibrationMatrix);
         }
 
         if (!view.isFocused() && event.getAction() == MotionEvent.ACTION_DOWN)

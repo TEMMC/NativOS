@@ -133,13 +133,21 @@ public final class InputEventSender {
         int action = event.getActionMasked();
 
         if (action == ACTION_MOVE || action == ACTION_HOVER_MOVE || action == ACTION_HOVER_ENTER || action == ACTION_HOVER_EXIT) {
-            // In order to process all of the events associated with an ACTION_MOVE event, we need
-            // to walk the list of historical events in order and add each event to our list, then
-            // retrieve the current move event data.
             int pointerCount = event.getPointerCount();
+            int historySize = event.getHistorySize();
 
             for (int p = 0; p < pointerCount; p++)
                 pointers[event.getPointerId(p)] = false;
+
+            // Stream historical points to capture the full touch digitizer polling rate (120-240Hz)
+            for (int h = 0; h < historySize; h++) {
+                for (int p = 0; p < pointerCount; p++) {
+                    renderData.mapScreenPoint(event.getHistoricalX(p, h), event.getHistoricalY(p, h), mappedPoint);
+                    int x = clamp((int) mappedPoint[0], 0, renderData.screenWidth);
+                    int y = clamp((int) mappedPoint[1], 0, renderData.screenHeight);
+                    mInjector.sendTouchEvent(XI_TouchUpdate, event.getPointerId(p), x, y);
+                }
+            }
 
             for (int p = 0; p < pointerCount; p++) {
                 renderData.mapScreenPoint(event.getX(p), event.getY(p), mappedPoint);

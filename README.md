@@ -8,7 +8,7 @@
   A touch-first Linux desktop for rooted ARM64 Android phones.
 </p>
 
-NativOS runs Ubuntu and the Phosh/Wayland mobile desktop in a private chroot while Android continues to provide the kernel, drivers, radio, camera stack, and other device-specific hardware support. The display server and Linux root filesystem are bundled in one APK; no separate Termux:X11 application is required.
+NativOS runs Alpine Linux with postmarketOS packages (or Debian 13 Trixie) and the Phosh/Wayland mobile desktop in a private chroot with the modular `nativOS-init` supervisor, while Android continues to provide the kernel, drivers, radio, camera stack, and other device-specific hardware support. The display server and Linux root filesystem are bundled in one APK; no separate Termux:X11 application is required.
 
 > [!WARNING]
 > NativOS is alpha software. It requires root, can become the Android home launcher, and includes tools that can disable system applications. Back up important data, test it as a normal app before selecting it as the default launcher, and keep another launcher installed.
@@ -17,7 +17,7 @@ NativOS runs Ubuntu and the Phosh/Wayland mobile desktop in a private chroot whi
 
 | Your phone | Recommended project |
 | --- | --- |
-| Rooted ARM64 phone | **NativOS** — Ubuntu chroot, Phosh, embedded X11, Android integration |
+| Rooted ARM64 phone | **NativOS** — Alpine/pmOS or Debian chroot, Phosh, embedded X11, Android integration |
 | Non-rooted ARM64 phone | [**DroidDesk**](https://github.com/orailnoor/DroidDesk) — a related Linux desktop project designed to work without root |
 
 NativOS does not provide a non-root mode. If you do not want to root your phone, download DroidDesk from its [Releases page](https://github.com/orailnoor/DroidDesk/releases) and follow its README. The projects share some display technology, but their Linux runtime and capabilities are different.
@@ -25,7 +25,8 @@ NativOS does not provide a non-root mode. If you do not want to root your phone,
 ## What to expect
 
 - A full Phosh desktop designed for touch and adaptable to portrait and landscape displays.
-- A bundled Ubuntu 24.04 ARM64 root filesystem. First boot extracts about 1 GB of Linux files and can take a minute or more depending on storage speed.
+- Ultra-lightweight Alpine Linux root filesystem with postmarketOS packages (or Debian 13 Trixie).
+- A modular init system (`nativOS-init`) with stage-based lifecycle and OpenRC service orchestration.
 - An embedded X11 server; the external Termux:X11 APK is not required.
 - GNOME Console, Files, Software, Calculator, Clocks, and other basic Linux applications.
 - Optional Android application shortcuts in the Phosh app drawer.
@@ -125,42 +126,42 @@ flatpak run APP_ID
 
 If its icon does not immediately appear in the drawer, wait a few seconds and reopen the drawer. Restart NativOS if the desktop cache still has not refreshed.
 
-Do not blindly add `--no-sandbox`, run random privileged scripts, or copy x86-64 libraries into the root filesystem. Save the terminal output and include it in a bug report instead. When a Flatpak is incompatible, prefer the Ubuntu ARM64 package if one exists.
+Do not blindly add `--no-sandbox`, run random privileged scripts, or copy foreign libraries into the root filesystem. Save the terminal output and include it in a bug report instead.
 
-### Ubuntu packages
+### Alpine Linux & postmarketOS packages (Default)
 
-Packages from the configured Ubuntu repositories are the most direct option:
+On Alpine/postmarketOS installations, use `apk`:
+
+```bash
+apk update
+apk add PACKAGE_NAME
+```
+
+To search for packages:
+
+```bash
+apk search SEARCH_TERM
+```
+
+### Debian packages
+
+On Debian 13 (Trixie) installations, use `apt`:
 
 ```bash
 apt update
 apt install PACKAGE_NAME
 ```
 
-These applications run outside Flatpak's sandbox. They generally integrate more predictably, but they have full access to the NativOS Linux environment.
+### Service management with `nativOS-init`
 
-### Local `.deb` files
-
-Place the `.deb` in the Android NativOS shared folder, then verify it in Linux:
+Check status or control background services directly from inside the Linux environment:
 
 ```bash
-cd /root/Shared
-dpkg-deb -f package.deb Package Version Architecture
+nativOS-init status
+nativOS-init restart [SERVICE]
 ```
 
-The architecture must be `arm64` or `all`. Install it with `apt`, which can resolve dependencies:
-
-```bash
-apt install ./package.deb
-```
-
-If an interrupted package operation leaves APT in a broken state:
-
-```bash
-dpkg --configure -a
-apt --fix-broken install
-```
-
-Do not run `apt autoremove` without reviewing its complete removal list; manually installed desktop components may still be marked as automatic dependencies.
+On Alpine/postmarketOS installations, standard OpenRC commands (`rc-service`, `rc-status`) are also available.
 
 ### AppImage, Snap, and foreign architectures
 
@@ -262,7 +263,9 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-Official release signing material is private and is never committed. Contributors can build a debug APK or configure their own signing key.
+## Documentation
+
+- [Display Architecture & Qualcomm DRM / Xiaomi M17](docs/DISPLAY_ARCHITECTURE_XIAOMI_M17.md): Deep dive into the Snapdragon display pipeline, KGSL, DRM Master, and DRI3 workarounds.
 
 ## Security
 

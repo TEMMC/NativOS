@@ -31,7 +31,10 @@ import android.widget.TextView
 import com.nativOS.bridge.AndroidAppIntegration
 import com.nativOS.bridge.BridgeService
 import com.nativOS.runtime.ChrootManager
+import com.nativOS.runtime.DisplayController
 import com.nativOS.runtime.RootfsManager
+import com.nativOS.runtime.SurfaceFlingerWatchdog
+import com.nativOS.setup.SetupWizardActivity
 import com.nativOS.storage.SharedFolderSync
 import com.nativOS.settings.NativOSPreferences
 import com.nativOS.settings.SettingsActivity
@@ -377,8 +380,16 @@ class KioskActivity : Activity() {
         chrootManager = ChrootManager(this)
         rootfsManager = RootfsManager(this)
 
+        DisplayController.applyRefreshRate(this)
         requestNotificationPermission()
         startBridgeService()
+
+        if (!rootfsManager.isSetupComplete() && !NativOSPreferences.isSetupWizardCompleted(this)) {
+            startActivity(Intent(this, SetupWizardActivity::class.java))
+            finish()
+            return
+        }
+
         startBootSequence()
     }
 
@@ -701,8 +712,13 @@ class KioskActivity : Activity() {
                     // Even if Phosh failed, leave the rootfs package database usable.
                     updateOverlay(0.90, "Installing minimal session...", "Phosh failed, trying fallback")
                     try {
-                        chrootManager.execChroot(
-                            "TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends dbus dbus-x11")
+                        if (rootfsManager.isApkBased()) {
+                            chrootManager.execChroot("apk add --no-cache dbus dbus-x11")
+                        } else {
+                            chrootManager.execChroot(
+                                "TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends dbus dbus-x11"
+                            )
+                        }
                     } catch (_: Exception) {}
                 }
             } else {
@@ -761,6 +777,21 @@ class KioskActivity : Activity() {
 
             runOnUiThread {
                 try {
+                    val scalePercent = NativOSPreferences.resolutionScalePercent(this@KioskActivity)
+                    val x11Prefs = MainActivity.getPrefs()
+                    if (scalePercent < 100) {
+                        x11Prefs.displayResolutionMode.put("scaled")
+                        val termuxScale = (10000.0 / scalePercent).toInt()
+                        x11Prefs.displayScale.put(termuxScale)
+                        x11Prefs.displayStretch.put(true)
+                        x11Prefs.displayFilteringMode.put("linear")
+                        Log.i(TAG, "Configured scaled X11 display: ${scalePercent}% (scale factor $termuxScale)")
+                    } else {
+                        x11Prefs.displayResolutionMode.put("native")
+                        x11Prefs.displayScale.put(100)
+                        x11Prefs.displayFilteringMode.put("nearest")
+                    }
+
                     val x11Activity = MainActivity.getInstance()
                     x11Activity.initLorieView(this@KioskActivity)
                     lorieView = x11Activity.lorieView
@@ -839,9 +870,9 @@ class KioskActivity : Activity() {
             Log.i(TAG, "Starting test session...")
 
             // Match Phoc's nested output to the actual X11 surface dimensions.
-            val screenWidth = lorieView.width
-            val screenHeight = lorieView.height
-            Log.i(TAG, "Detected screen: ${screenWidth}x${screenHeight}")
+            val screenWidth = lorieView.x11Width
+            val screenHeight = lorieView.x11Height
+            Log.i(TAG, "Detected X11 screen: ${screenWidth}x${screenHeight} (view size: ${lorieView.width}x${lorieView.height})")
 
             chrootManager.startPhoshSession(screenWidth, screenHeight)
             updateOverlay(0.98, "Starting Linux desktop...", "Waiting for Phosh")
@@ -901,6 +932,7 @@ class KioskActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        DisplayController.applyRefreshRate(this)
         enterImmersiveMode()
         AndroidAppIntegration.sync(this)
         if (waitingForRoot) retryAfterRootGrant()
@@ -1031,10 +1063,17 @@ class KioskActivity : Activity() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             window.insetsController?.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
         }
+        SurfaceFlingerWatchdog.ensureSurfaceFlingerRunning(applicationContext)
         moveTaskToBack(true)
     }
 
+    override fun onStop() {
+        SurfaceFlingerWatchdog.ensureSurfaceFlingerRunning(applicationContext)
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        SurfaceFlingerWatchdog.ensureSurfaceFlingerRunning(applicationContext)
         if (activeInstance?.get() === this) activeInstance = null
         x11ServiceClient?.disconnect()
         x11ServiceClient = null

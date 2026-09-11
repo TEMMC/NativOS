@@ -145,6 +145,12 @@
             android:theme="@style/Theme.NativOS.Settings" />
 
         <activity
+            android:name=".setup.SetupWizardActivity"
+            android:exported="false"
+            android:label="NativOS Setup"
+            android:theme="@style/Theme.NativOS.Settings" />
+
+        <activity
             android:name=".settings.SystemAppRemoverActivity"
             android:exported="false"
             android:label="System App Remover"

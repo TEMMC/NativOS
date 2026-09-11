@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+# OpenRC service script for NativOS Android Bridge daemon
+
+name="nativOS-bridge"
+description="NativOS Android Hardware Bridge Client"
+
+command="/usr/local/bin/nativOS-bridge"
+command_background="yes"
+pidfile="/run/nativOS/bridge-client.pid"
+
+depend() {
+    need dbus
+    after dbus
+}
+
+start_pre() {
+    checkpath -d -m 0755 -o root:root /run/nativOS
+}

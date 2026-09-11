@@ -59,8 +59,17 @@ val verifyBundledRootfs by tasks.registering {
     doLast {
         val asset = rootfsDirectory.file("nativos-rootfs-arm64.tgz").asFile
         val checksumFile = rootfsDirectory.file("nativos-rootfs-arm64.tgz.sha256").asFile
-        check(asset.isFile && asset.length() > 100L * 1024L * 1024L) {
-            "Bundled rootfs is missing or implausibly small. Run scripts/build-rootfs-asset.sh."
+        if (!asset.isFile) {
+            val isRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+            if (isRelease || project.hasProperty("requireBundledRootfs")) {
+                error("Bundled rootfs is missing. Run scripts/build-rootfs-asset.sh or place nativos-rootfs-arm64.tgz in assets/rootfs.")
+            } else {
+                logger.warn("Bundled rootfs not found: debug build will download rootfs at runtime on device.")
+                return@doLast
+            }
+        }
+        check(asset.length() > 100L * 1024L * 1024L) {
+            "Bundled rootfs is implausibly small. Run scripts/build-rootfs-asset.sh."
         }
         check(checksumFile.isFile) {
             "Bundled rootfs checksum is missing: ${checksumFile.path}"

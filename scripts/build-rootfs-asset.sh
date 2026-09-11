@@ -22,7 +22,7 @@ if ! "$tar_bin" --version 2>/dev/null | grep -q 'GNU tar'; then
     exit 2
 fi
 
-test -x "$rootfs/usr/bin/phosh"
+test -x "$rootfs/usr/bin/phosh" || test -x "$rootfs/usr/libexec/phosh"
 test -x "$rootfs/usr/bin/phoc"
 test -x "$rootfs/usr/bin/kgx"
 test -f "$rootfs/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml"
@@ -33,29 +33,36 @@ cp -a "$rootfs"/. "$staging"/
 
 # Never ship device identity, caches, runtime state, logs, or user-installed apps.
 rm -rf "$staging/tmp"/* "$staging/run"/* "$staging/var/tmp"/*
-rm -rf "$staging/var/cache/apt/archives"/* "$staging/var/lib/apt/lists"/*
+rm -rf "$staging/var/cache/apt/archives"/* "$staging/var/lib/apt/lists"/* "$staging/var/cache/apk"/*
 rm -rf "$staging/root/.cache" "$staging/root/.local/share/flatpak"
 rm -f "$staging/etc/machine-id" "$staging/var/lib/dbus/machine-id"
 mkdir -p "$staging/tmp" "$staging/run" "$staging/var/tmp"
 chmod 1777 "$staging/tmp" "$staging/var/tmp"
 
-# Record the exact Debian package set included in this image. This file is part
-# of the rootfs and can be compared between releases without booting it.
+# Record the exact package set included in this image (Debian dpkg or Alpine apk).
 mkdir -p "$staging/usr/share/nativos"
-awk '
-    BEGIN { RS=""; FS="\n" }
-    {
-        package=""; version=""; architecture=""
-        for (i = 1; i <= NF; i++) {
-            if ($i ~ /^Package: /) package=substr($i, 10)
-            else if ($i ~ /^Version: /) version=substr($i, 10)
-            else if ($i ~ /^Architecture: /) architecture=substr($i, 15)
+if [ -f "$staging/lib/apk/db/installed" ]; then
+    awk -F: '
+        $1 == "P" { p=$2 }
+        $1 == "V" { v=$2 }
+        $1 == "A" { a=$2; if (p != "" && v != "") print p "=" v " [" a "]"; p=""; v=""; a="" }
+    ' "$staging/lib/apk/db/installed" | LC_ALL=C sort > "$staging/usr/share/nativos/rootfs-packages.txt"
+elif [ -f "$staging/var/lib/dpkg/status" ]; then
+    awk '
+        BEGIN { RS=""; FS="\n" }
+        {
+            package=""; version=""; architecture=""
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^Package: /) package=substr($i, 10)
+                else if ($i ~ /^Version: /) version=substr($i, 10)
+                else if ($i ~ /^Architecture: /) architecture=substr($i, 15)
+            }
+            if (package != "" && version != "")
+                print package "=" version " [" architecture "]"
         }
-        if (package != "" && version != "")
-            print package "=" version " [" architecture "]"
-    }
-' "$staging/var/lib/dpkg/status" | LC_ALL=C sort > \
-    "$staging/usr/share/nativos/rootfs-packages.txt"
+    ' "$staging/var/lib/dpkg/status" | LC_ALL=C sort > \
+        "$staging/usr/share/nativos/rootfs-packages.txt"
+fi
 
 cat > "$staging/usr/share/nativos/rootfs-build.txt" <<EOF
 schema=1
