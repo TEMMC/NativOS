@@ -52,19 +52,33 @@ run_target '
 '
 
 install_mt() {
-  local name="$1" url="$2" expected="$3" expected_path="$4"
-  local archive
+  local name="$1" url="$2" expected="$3" binary="$4"
+  local archive unpack found
   archive="$(mktemp "/tmp/nativos-${name}.XXXXXX.tar.gz")"
+  unpack="$(mktemp -d "/tmp/nativos-${name}.XXXXXX")"
+  echo "::group::Install ${name} release asset"
   curl --fail --location --silent --show-error --retry 3 "$url" -o "$archive"
-  echo "${expected}  ${archive}" | sha256sum --check --status
-  tar -tzf "$archive" | sed 's#^\./##' | grep -Fxq "$expected_path"
+  echo "${expected}  ${archive}" | sha256sum --check
+  echo "Archive contents (${name}):"
+  tar -tzf "$archive" | head -80
+  tar -xzf "$archive" -C "$unpack"
+  found="$(find "$unpack" -type f -name "$binary" -perm /111 -print -quit)"
+  if [ -z "$found" ]; then
+    echo "::error::The verified ${name} archive contains no executable named ${binary}."
+    find "$unpack" -maxdepth 5 -type f -printf '%P\n' | head -120
+    exit 1
+  fi
+  # Keep any bundled libraries, data files and support files in their
+  # published paths, then expose the discovered executable at a stable path.
   sudo tar --no-same-owner -xzf "$archive" -C "$ROOTFS"
-  sudo test -x "$ROOTFS/$expected_path"
-  rm -f "$archive"
+  sudo install -D -m 0755 "$found" "$ROOTFS/usr/local/bin/$binary"
+  sudo test -x "$ROOTFS/usr/local/bin/$binary"
+  rm -rf "$archive" "$unpack"
+  echo "::endgroup::"
 }
 
-install_mt phoc "$PHOC_URL" "$PHOC_SHA256" "usr/local/bin/phoc"
-install_mt phosh "$PHOSH_URL" "$PHOSH_SHA256" "usr/local/bin/phosh"
+install_mt phoc "$PHOC_URL" "$PHOC_SHA256" "phoc"
+install_mt phosh "$PHOSH_URL" "$PHOSH_SHA256" "phosh"
 
 # Preserve the MT builds as the selected executables at the paths checked by
 # Gradle and used by NativOS' existing launch/session code.
