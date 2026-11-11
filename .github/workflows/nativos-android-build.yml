@@ -63,6 +63,11 @@ jobs:
           echo "Rootfs disk usage:"
           sudo du -sh "$RUNNER_TEMP/nativos-rootfs"
 
+      - name: Enable ARM64 emulation for Debian rootfs preparation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Install MT-Phoc, MT-Phosh and NativOS runtime dependencies
         shell: bash
         run: |
