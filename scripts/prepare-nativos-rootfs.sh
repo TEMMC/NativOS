@@ -19,18 +19,13 @@ test -x "$ROOTFS/bin/bash"
 test -f "$ROOTFS/etc/debian_version"
 test "$(dpkg --print-architecture)" = amd64
 
-sudo apt-get update
-sudo apt-get install -y qemu-user-static binfmt-support
-
-# Docker Official Image is Debian's published ARM64 base rootfs. Run its
-# package manager under qemu-user-static; no cross-architecture binaries are
-# executed natively on the x86_64 Actions runner.
-sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
+# ARM64 execution is registered by docker/setup-qemu-action in the workflow.
+# The kernel binfmt handler dispatches ARM64 ELF binaries to QEMU automatically.
 sudo rm -f "$ROOTFS/etc/resolv.conf"
 sudo cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
 run_target() {
-  sudo chroot "$ROOTFS" /usr/bin/qemu-aarch64-static /bin/bash -Eeuo pipefail -c "$1"
+  sudo chroot "$ROOTFS" /bin/bash -Eeuo pipefail -c "$1"
 }
 
 run_target '
@@ -119,7 +114,6 @@ run_target '
 '
 
 # Remove the temporary cross-architecture emulator from the shipped image.
-sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
 sudo rm -f "$ROOTFS/etc/resolv.conf"
 sudo ln -s /run/systemd/resolve/stub-resolv.conf "$ROOTFS/etc/resolv.conf"
 
