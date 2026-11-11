@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/nativos-android-build.yml"
+      - "scripts/prepare-nativos-rootfs.sh"
+      - "scripts/build-rootfs-asset.sh"
+      - "linux/bridge-client/**"
+      - "linux/config/**"
   workflow_dispatch:
 
 permissions:
@@ -16,11 +20,11 @@ concurrency:
 
 jobs:
   build:
-    name: Build existing NativOS app
+    name: Prepare Debian ARM64 rootfs and build NativOS APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
-      - name: Check out repository without modifying source
+      - name: Check out repository without modifying Android app source
         uses: actions/checkout@v5
 
       - name: Set up Java 17
@@ -29,7 +33,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Android SDK packages without obsolete tools package
+      - name: Install Android SDK packages
         shell: bash
         run: |
           set -euxo pipefail
@@ -43,7 +47,36 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-      - name: Inspect required existing build inputs
+      - name: Download official Debian Trixie ARM64 base rootfs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          docker pull --platform linux/arm64 debian:trixie
+          cid="$(docker create --platform linux/arm64 debian:trixie)"
+          mkdir -p "$RUNNER_TEMP/nativos-rootfs"
+          docker export "$cid" | sudo tar -xpf - -C "$RUNNER_TEMP/nativos-rootfs"
+          docker rm "$cid"
+          test -x "$RUNNER_TEMP/nativos-rootfs/bin/bash"
+          test -f "$RUNNER_TEMP/nativos-rootfs/etc/debian_version"
+          grep -q '^13' "$RUNNER_TEMP/nativos-rootfs/etc/debian_version"
+          echo "Debian base: $(cat "$RUNNER_TEMP/nativos-rootfs/etc/debian_version")"
+          echo "Rootfs disk usage:"
+          sudo du -sh "$RUNNER_TEMP/nativos-rootfs"
+
+      - name: Install MT-Phoc, MT-Phosh and NativOS runtime dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/prepare-nativos-rootfs.sh scripts/build-rootfs-asset.sh
+          scripts/prepare-nativos-rootfs.sh \
+            "$RUNNER_TEMP/nativos-rootfs" \
+            "$GITHUB_WORKSPACE/android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz"
+          cd android/app/src/main/assets/rootfs
+          sha256sum --check nativos-rootfs-arm64.tgz.sha256
+          ls -lh nativos-rootfs-arm64.tgz*
+          tar -tzf nativos-rootfs-arm64.tgz | grep -E '(^|/)usr/bin/(phoc|phosh|kgx)$|usr/share/nativos/rootfs-packages.txt'
+
+      - name: Verify required existing app build inputs
         shell: bash
         run: |
           set -euxo pipefail
@@ -51,10 +84,9 @@ jobs:
           test -f android/gradlew
           test -f android/app/build.gradle.kts
           test -f android/app/src/main/xlorie-upstream/arm64-v8a/libXlorie.so
+          test -s android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz
+          test -s android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz.sha256
           ls -lah android/app/src/main/assets/rootfs/
-          if [[ ! -f android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz ]]; then
-            echo "::warning::The required rootfs archive is not tracked at the expected path. Gradle's verifyBundledRootfs task may fail."
-          fi
 
       - name: Build debug APK using the repository's existing source
         working-directory: android
@@ -64,11 +96,14 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Upload APK if build produced one
+      - name: Upload APK and exact rootfs used by the build
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: nativos-debug-apk-${{ github.sha }}
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: nativos-debug-and-rootfs-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz
+            android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz.sha256
           if-no-files-found: ignore
           retention-days: 14
