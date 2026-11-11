@@ -55,7 +55,9 @@ install_mt() {
   curl --fail --location --silent --show-error --retry 3 "$url" -o "$archive"
   echo "${expected}  ${archive}" | sha256sum --check
   echo "Archive contents (${name}):"
-  tar -tzf "$archive" | head -80
+  local listing="${archive}.contents"
+  tar -tzf "$archive" > "$listing"
+  sed -n '1,80p' "$listing"
   tar -xzf "$archive" -C "$unpack"
   found="$(find "$unpack" -type f -name "$binary" -perm /111 -print -quit)"
   if [ -z "$found" ]; then
@@ -68,7 +70,7 @@ install_mt() {
   sudo tar --no-same-owner -xzf "$archive" -C "$ROOTFS"
   sudo install -D -m 0755 "$found" "$ROOTFS/usr/local/bin/$binary"
   sudo test -x "$ROOTFS/usr/local/bin/$binary"
-  rm -rf "$archive" "$unpack"
+  rm -rf "$archive" "$listing" "$unpack"
   echo "::endgroup::"
 }
 
