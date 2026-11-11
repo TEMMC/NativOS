@@ -24,6 +24,24 @@ test "$(dpkg --print-architecture)" = amd64
 sudo rm -f "$ROOTFS/etc/resolv.conf"
 sudo cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
+# Provide the virtual filesystems expected by Debian maintainer scripts and
+# apt's terminal logger while operating inside the ARM64 chroot.
+for mountpoint in proc sys dev dev/pts; do
+  sudo mkdir -p "$ROOTFS/$mountpoint"
+done
+sudo mountpoint -q "$ROOTFS/proc" || sudo mount -t proc proc "$ROOTFS/proc"
+sudo mountpoint -q "$ROOTFS/sys" || sudo mount --rbind /sys "$ROOTFS/sys"
+sudo mountpoint -q "$ROOTFS/dev" || sudo mount --rbind /dev "$ROOTFS/dev"
+sudo mountpoint -q "$ROOTFS/dev/pts" || sudo mount --bind /dev/pts "$ROOTFS/dev/pts"
+
+cleanup_chroot_mounts() {
+  sudo umount -R "$ROOTFS/dev/pts" 2>/dev/null || true
+  sudo umount -R "$ROOTFS/dev" 2>/dev/null || true
+  sudo umount -R "$ROOTFS/sys" 2>/dev/null || true
+  sudo umount -R "$ROOTFS/proc" 2>/dev/null || true
+}
+trap cleanup_chroot_mounts EXIT
+
 run_target() {
   sudo chroot "$ROOTFS" /bin/bash -Eeuo pipefail -c "$1"
 }
@@ -119,8 +137,14 @@ run_target '
 sudo rm -f "$ROOTFS/etc/resolv.conf"
 sudo ln -s /run/systemd/resolve/stub-resolv.conf "$ROOTFS/etc/resolv.conf"
 
-test -x "$ROOTFS/usr/bin/phoc"
-test -x "$ROOTFS/usr/bin/phosh"
-test -x "$ROOTFS/usr/bin/kgx"
-test -f "$ROOTFS/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml"
+for required in \
+  "$ROOTFS/usr/bin/phoc" \
+  "$ROOTFS/usr/bin/phosh" \
+  "$ROOTFS/usr/bin/kgx" \
+  "$ROOTFS/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml"; do
+  if [ ! -e "$required" ]; then
+    echo "::error::Required rootfs component is missing: $required"
+    exit 1
+  fi
+done
 sudo bash "$REPO_ROOT/scripts/build-rootfs-asset.sh" "$ROOTFS" "$OUTPUT"
