@@ -102,7 +102,7 @@ jobs:
           ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload APK and exact rootfs used by the build
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v5
         with:
           name: nativos-debug-and-rootfs-${{ github.sha }}
