@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Build the bundled NativOS ARM64 rootfs from Debian's official ARM64 image.
+# Build the bundled MT-OS ARM64 rootfs from Debian's official ARM64 image.
 # Installs the pinned MT-Phoc/MT-Phosh release assets and the repository's
-# NativOS bridge files. Android/Kotlin application sources are not modified.
+# MT-OS bridge files. Android/Kotlin application sources are not modified.
 set -Eeuo pipefail
 
-ROOTFS="${1:?usage: prepare-nativos-rootfs.sh ROOTFS_DIR OUTPUT_TGZ}"
-OUTPUT="${2:?usage: prepare-nativos-rootfs.sh ROOTFS_DIR OUTPUT_TGZ}"
+ROOTFS="${1:?usage: prepare-mt-os-rootfs.sh ROOTFS_DIR OUTPUT_TGZ}"
+OUTPUT="${2:?usage: prepare-mt-os-rootfs.sh ROOTFS_DIR OUTPUT_TGZ}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 PHOC_URL="https://github.com/TEMMC/MT-phoc/releases/download/MTalpha_1/MT-phoc-linux-install.tar.gz"
@@ -72,8 +72,8 @@ run_target '
 install_mt() {
   local name="$1" url="$2" expected="$3" binary="$4"
   local archive unpack found
-  archive="$(mktemp "/tmp/nativos-${name}.XXXXXX.tar.gz")"
-  unpack="$(mktemp -d "/tmp/nativos-${name}.XXXXXX")"
+  archive="$(mktemp "/tmp/mt-os-${name}.XXXXXX.tar.gz")"
+  unpack="$(mktemp -d "/tmp/mt-os-${name}.XXXXXX")"
   echo "::group::Install ${name} release asset"
   curl --fail --location --silent --show-error --retry 3 "$url" -o "$archive"
   echo "${expected}  ${archive}" | sha256sum --check
@@ -105,19 +105,19 @@ install_mt phoc "$PHOC_URL" "$PHOC_SHA256" "phoc"
 install_mt phosh "$PHOSH_URL" "$PHOSH_SHA256" "phosh"
 
 # Preserve the MT builds as real executable files at the paths checked by
-# Gradle and used by NativOS' existing launch/session code.
-sudo install -d "$ROOTFS/usr/bin" "$ROOTFS/etc/nativOS" "$ROOTFS/run/nativOS"
+# Gradle and used by MT-OS' existing launch/session code.
+sudo install -d "$ROOTFS/usr/bin" "$ROOTFS/etc/mt-os" "$ROOTFS/run/mt-os"
 sudo install -m 0755 "$ROOTFS/usr/local/bin/phoc" "$ROOTFS/usr/bin/phoc"
 sudo install -m 0755 "$ROOTFS/usr/local/bin/phosh" "$ROOTFS/usr/bin/phosh"
-sudo install -m 0755 "$REPO_ROOT/linux/bridge-client/nativOS-bridge.py" "$ROOTFS/usr/local/bin/nativOS-bridge"
-sudo install -m 0644 "$REPO_ROOT/linux/config/phoc.ini" "$ROOTFS/etc/nativOS/phoc.ini"
-sudo install -m 0644 "$REPO_ROOT/linux/config/nativOS-bridge.service" "$ROOTFS/etc/systemd/system/nativOS-bridge.service"
+sudo install -m 0755 "$REPO_ROOT/linux/bridge-client/mt-os-bridge.py" "$ROOTFS/usr/local/bin/mt-os-bridge"
+sudo install -m 0644 "$REPO_ROOT/linux/config/phoc.ini" "$ROOTFS/etc/mt-os/phoc.ini"
+sudo install -m 0644 "$REPO_ROOT/linux/config/mt-os-bridge.service" "$ROOTFS/etc/systemd/system/mt-os-bridge.service"
 
 # Install the bridge service without trying to start system services in chroot.
 sudo mkdir -p "$ROOTFS/etc/systemd/system/multi-user.target.wants"
-sudo ln -sfn ../nativOS-bridge.service "$ROOTFS/etc/systemd/system/multi-user.target.wants/nativOS-bridge.service"
-sudo mkdir -p "$ROOTFS/usr/share/nativos"
-sudo tee "$ROOTFS/etc/nativOS/mt-desktop-builds.txt" >/dev/null <<EOF
+sudo ln -sfn ../mt-os-bridge.service "$ROOTFS/etc/systemd/system/multi-user.target.wants/mt-os-bridge.service"
+sudo mkdir -p "$ROOTFS/usr/share/mt-os"
+sudo tee "$ROOTFS/etc/mt-os/mt-desktop-builds.txt" >/dev/null <<EOF
 phoc_release=MTalpha_1
 phoc_sha256=$PHOC_SHA256
 phosh_release=MT_alpha_1
