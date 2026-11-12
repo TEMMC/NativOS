@@ -87,7 +87,11 @@ install_mt() {
   # published paths, then expose the discovered executable at a stable path.
   sudo tar --no-same-owner -xzf "$archive" -C "$ROOTFS"
   sudo install -D -m 0755 "$found" "$ROOTFS/usr/local/bin/$binary"
+  # Install a real executable at /usr/bin as well. Avoid relying on a symlink
+  # through /usr/local, which can be absent/broken in merged-/usr base images.
+  sudo install -D -m 0755 "$found" "$ROOTFS/usr/bin/$binary"
   sudo test -x "$ROOTFS/usr/local/bin/$binary"
+  sudo test -x "$ROOTFS/usr/bin/$binary"
   rm -rf "$archive" "$listing" "$unpack"
   echo "::endgroup::"
 }
@@ -95,11 +99,11 @@ install_mt() {
 install_mt phoc "$PHOC_URL" "$PHOC_SHA256" "phoc"
 install_mt phosh "$PHOSH_URL" "$PHOSH_SHA256" "phosh"
 
-# Preserve the MT builds as the selected executables at the paths checked by
+# Preserve the MT builds as real executable files at the paths checked by
 # Gradle and used by NativOS' existing launch/session code.
 sudo install -d "$ROOTFS/usr/bin" "$ROOTFS/etc/nativOS" "$ROOTFS/run/nativOS"
-sudo ln -sfn /usr/local/bin/phoc "$ROOTFS/usr/bin/phoc"
-sudo ln -sfn /usr/local/bin/phosh "$ROOTFS/usr/bin/phosh"
+sudo install -m 0755 "$ROOTFS/usr/local/bin/phoc" "$ROOTFS/usr/bin/phoc"
+sudo install -m 0755 "$ROOTFS/usr/local/bin/phosh" "$ROOTFS/usr/bin/phosh"
 sudo install -m 0755 "$REPO_ROOT/linux/bridge-client/nativOS-bridge.py" "$ROOTFS/usr/local/bin/nativOS-bridge"
 sudo install -m 0644 "$REPO_ROOT/linux/config/phoc.ini" "$ROOTFS/etc/nativOS/phoc.ini"
 sudo install -m 0644 "$REPO_ROOT/linux/config/nativOS-bridge.service" "$ROOTFS/etc/systemd/system/nativOS-bridge.service"
