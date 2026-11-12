@@ -141,9 +141,14 @@ run_target '
 '
 
 # Unmount host-backed virtual filesystems before staging/copying the rootfs.
-# Keeping /proc mounted makes cp -a traverse live host process entries and fail
-# on files such as /proc/1/mem (EIO/Invalid argument).
+# Never allow live host /proc, /sys or /dev mounts into the packaged image.
 cleanup_chroot_mounts
+for mountpoint in proc sys dev/pts dev; do
+  if sudo mountpoint -q "$ROOTFS/$mountpoint"; then
+    echo "::error::Temporary host filesystem is still mounted: $ROOTFS/$mountpoint"
+    exit 1
+  fi
+done
 
 # Remove the temporary cross-architecture emulator from the shipped image.
 sudo rm -f "$ROOTFS/etc/resolv.conf"
