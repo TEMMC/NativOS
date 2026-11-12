@@ -18,7 +18,7 @@ val preparePatchedXlorie by tasks.registering {
         "src/main/xlorie-upstream/arm64-v8a/libXlorie.so"
     )
     val patched = layout.buildDirectory.file(
-        "generated/nativosJniLibs/arm64-v8a/libXlorie.so"
+        "generated/mtOsJniLibs/arm64-v8a/libXlorie.so"
     )
     inputs.file(upstream)
     outputs.file(patched)
@@ -57,8 +57,8 @@ val verifyBundledRootfs by tasks.registering {
     inputs.dir(rootfsDirectory)
 
     doLast {
-        val asset = rootfsDirectory.file("nativos-rootfs-arm64.tgz").asFile
-        val checksumFile = rootfsDirectory.file("nativos-rootfs-arm64.tgz.sha256").asFile
+        val asset = rootfsDirectory.file("mt-os-rootfs-arm64.tgz").asFile
+        val checksumFile = rootfsDirectory.file("mt-os-rootfs-arm64.tgz.sha256").asFile
         check(asset.isFile && asset.length() > 100L * 1024L * 1024L) {
             "Bundled rootfs is missing or implausibly small. Run scripts/build-rootfs-asset.sh."
         }
@@ -104,7 +104,7 @@ android {
     sourceSets {
         getByName("main") {
             java.srcDirs("src/main/java", "src/main/kotlin")
-            jniLibs.srcDir(layout.buildDirectory.dir("generated/nativosJniLibs"))
+            jniLibs.srcDir(layout.buildDirectory.dir("generated/mtOsJniLibs"))
         }
     }
 
