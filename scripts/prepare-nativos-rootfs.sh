@@ -109,9 +109,9 @@ install_mt phosh "$PHOSH_URL" "$PHOSH_SHA256" "phosh"
 sudo install -d "$ROOTFS/usr/bin" "$ROOTFS/etc/mt-os" "$ROOTFS/run/mt-os"
 sudo install -m 0755 "$ROOTFS/usr/local/bin/phoc" "$ROOTFS/usr/bin/phoc"
 sudo install -m 0755 "$ROOTFS/usr/local/bin/phosh" "$ROOTFS/usr/bin/phosh"
-sudo install -m 0755 "$REPO_ROOT/linux/bridge-client/mt-os-bridge.py" "$ROOTFS/usr/local/bin/mt-os-bridge"
+sudo install -m 0755 "$REPO_ROOT/linux/bridge-client/nativOS-bridge.py" "$ROOTFS/usr/local/bin/mt-os-bridge"
 sudo install -m 0644 "$REPO_ROOT/linux/config/phoc.ini" "$ROOTFS/etc/mt-os/phoc.ini"
-sudo install -m 0644 "$REPO_ROOT/linux/config/mt-os-bridge.service" "$ROOTFS/etc/systemd/system/mt-os-bridge.service"
+sudo install -m 0644 "$REPO_ROOT/linux/config/nativOS-bridge.service" "$ROOTFS/etc/systemd/system/mt-os-bridge.service"
 
 # Install the bridge service without trying to start system services in chroot.
 sudo mkdir -p "$ROOTFS/etc/systemd/system/multi-user.target.wants"
