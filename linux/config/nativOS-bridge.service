@@ -1,12 +1,12 @@
 [Unit]
-Description=NativOS Hardware Bridge Client
-Documentation=https://github.com/orailnoor/NativOS
+Description=MT-OS Hardware Bridge Client
+Documentation=https://github.com/orailnoor/MT-OS
 After=network.target dbus.service
 Wants=dbus.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/nativOS-bridge --socket /run/nativOS/bridge.sock
+ExecStart=/usr/local/bin/mt-os-bridge --socket /run/mt-os/bridge.sock
 Restart=always
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1
