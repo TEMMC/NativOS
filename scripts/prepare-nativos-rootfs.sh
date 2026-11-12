@@ -23,6 +23,9 @@ test "$(dpkg --print-architecture)" = amd64
 # The kernel binfmt handler dispatches ARM64 ELF binaries to QEMU automatically.
 sudo rm -f "$ROOTFS/etc/resolv.conf"
 sudo cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+# The Debian base image already ships deb822 sources; remove them because this
+# script manages the classic sources.list below. This avoids duplicate indexes.
+sudo rm -f "$ROOTFS/etc/apt/sources.list.d/debian.sources"
 
 # Provide the virtual filesystems expected by Debian maintainer scripts and
 # apt's terminal logger while operating inside the ARM64 chroot.
@@ -136,6 +139,11 @@ run_target '
   apt-get clean
   rm -rf /var/lib/apt/lists/*
 '
+
+# Unmount host-backed virtual filesystems before staging/copying the rootfs.
+# Keeping /proc mounted makes cp -a traverse live host process entries and fail
+# on files such as /proc/1/mem (EIO/Invalid argument).
+cleanup_chroot_mounts
 
 # Remove the temporary cross-architecture emulator from the shipped image.
 sudo rm -f "$ROOTFS/etc/resolv.conf"
