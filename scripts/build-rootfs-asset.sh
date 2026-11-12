@@ -27,7 +27,7 @@ test -x "$rootfs/usr/bin/phoc"
 test -x "$rootfs/usr/bin/kgx"
 test -f "$rootfs/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml"
 
-staging=$(mktemp -d "${TMPDIR:-/tmp}/nativos-rootfs.XXXXXX")
+staging=$(mktemp -d "${TMPDIR:-/tmp}/mt-os-rootfs.XXXXXX")
 trap 'rm -rf "$staging"' EXIT HUP INT TERM
 # Copy only the rootfs filesystem. /proc, /sys and /dev may be live bind mounts
 # during preparation; do not traverse host kernel interfaces or copy their contents.
@@ -43,7 +43,7 @@ chmod 1777 "$staging/tmp" "$staging/var/tmp"
 
 # Record the exact Debian package set included in this image. This file is part
 # of the rootfs and can be compared between releases without booting it.
-mkdir -p "$staging/usr/share/nativos"
+mkdir -p "$staging/usr/share/mt-os"
 awk '
     BEGIN { RS=""; FS="\n" }
     {
@@ -57,9 +57,9 @@ awk '
             print package "=" version " [" architecture "]"
     }
 ' "$staging/var/lib/dpkg/status" | LC_ALL=C sort > \
-    "$staging/usr/share/nativos/rootfs-packages.txt"
+    "$staging/usr/share/mt-os/rootfs-packages.txt"
 
-cat > "$staging/usr/share/nativos/rootfs-build.txt" <<EOF
+cat > "$staging/usr/share/mt-os/rootfs-build.txt" <<EOF
 schema=1
 architecture=arm64
 source_date_epoch=$source_date_epoch
