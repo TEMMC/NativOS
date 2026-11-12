@@ -9,6 +9,6 @@ SHA-256:
 `66b11a94835f66e80efc8556477334a14dc68456a76e31ada3cd2d440869c5d5`
 
 Mesa is distributed under the licenses recorded in the package's
-`usr/share/doc/mesa-vulkan-drivers/copyright` file. NativOS extracts this
-package into `/opt/nativos-gpu` without replacing the distribution Mesa,
+`usr/share/doc/mesa-vulkan-drivers/copyright` file. MT-OS extracts this
+package into `/opt/mt-os-gpu` without replacing the distribution Mesa,
 preserving the software-rendering fallback.
