@@ -29,7 +29,9 @@ test -f "$rootfs/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripheral
 
 staging=$(mktemp -d "${TMPDIR:-/tmp}/nativos-rootfs.XXXXXX")
 trap 'rm -rf "$staging"' EXIT HUP INT TERM
-cp -a "$rootfs"/. "$staging"/
+# Copy only the rootfs filesystem. /proc, /sys and /dev may be live bind mounts
+# during preparation; do not traverse host kernel interfaces or copy their contents.
+cp -a --one-file-system "$rootfs"/. "$staging"/
 
 # Never ship device identity, caches, runtime state, logs, or user-installed apps.
 rm -rf "$staging/tmp"/* "$staging/run"/* "$staging/var/tmp"/*
