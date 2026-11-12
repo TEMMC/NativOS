@@ -101,6 +101,40 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
+      - name: Prepare private Android release signing key
+        if: ${{ secrets.NATIVOS_KEYSTORE_BASE64 != '' && secrets.NATIVOS_KEYSTORE_PASSWORD != '' && secrets.NATIVOS_KEY_ALIAS != '' && secrets.NATIVOS_KEY_PASSWORD != '' }}
+        working-directory: android
+        env:
+          NATIVOS_KEYSTORE_BASE64: ${{ secrets.NATIVOS_KEYSTORE_BASE64 }}
+          NATIVOS_KEYSTORE_PASSWORD: ${{ secrets.NATIVOS_KEYSTORE_PASSWORD }}
+          NATIVOS_KEY_ALIAS: ${{ secrets.NATIVOS_KEY_ALIAS }}
+          NATIVOS_KEY_PASSWORD: ${{ secrets.NATIVOS_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p signing
+          printf '%s' "$NATIVOS_KEYSTORE_BASE64" | base64 --decode > signing/nativos-release.jks
+          chmod 600 signing/nativos-release.jks
+          cat > signing/keystore.properties <<EOF
+          storeFile=signing/nativos-release.jks
+          storePassword=$NATIVOS_KEYSTORE_PASSWORD
+          keyAlias=$NATIVOS_KEY_ALIAS
+          keyPassword=$NATIVOS_KEY_PASSWORD
+          EOF
+          chmod 600 signing/keystore.properties
+
+      - name: Build signed release APK for future in-place updates
+        if: ${{ secrets.NATIVOS_KEYSTORE_BASE64 != '' && secrets.NATIVOS_KEYSTORE_PASSWORD != '' && secrets.NATIVOS_KEY_ALIAS != '' && secrets.NATIVOS_KEY_PASSWORD != '' }}
+        working-directory: android
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ./gradlew --no-daemon --stacktrace :app:assembleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          sha256sum "$APK"
+
       - name: Upload APK and exact rootfs used by the build
         if: success()
         uses: actions/upload-artifact@v5
@@ -112,3 +146,12 @@ jobs:
             android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz.sha256
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Upload signed release APK
+        if: success() && secrets.NATIVOS_KEYSTORE_BASE64 != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: nativos-signed-release-${{ github.sha }}
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 90
