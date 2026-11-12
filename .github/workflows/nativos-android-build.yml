@@ -23,6 +23,8 @@ jobs:
     name: Prepare Debian ARM64 rootfs and build NativOS APK
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    env:
+      NATIVOS_SIGNING_ENABLED: ${{ secrets.NATIVOS_KEYSTORE_BASE64 != '' && secrets.NATIVOS_KEYSTORE_PASSWORD != '' && secrets.NATIVOS_KEY_ALIAS != '' && secrets.NATIVOS_KEY_PASSWORD != '' }}
     steps:
       - name: Check out repository without modifying Android app source
         uses: actions/checkout@v5
@@ -102,7 +104,7 @@ jobs:
           ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: Prepare private Android release signing key
-        if: ${{ secrets.NATIVOS_KEYSTORE_BASE64 != '' && secrets.NATIVOS_KEYSTORE_PASSWORD != '' && secrets.NATIVOS_KEY_ALIAS != '' && secrets.NATIVOS_KEY_PASSWORD != '' }}
+        if: env.NATIVOS_SIGNING_ENABLED == 'true'
         working-directory: android
         env:
           NATIVOS_KEYSTORE_BASE64: ${{ secrets.NATIVOS_KEYSTORE_BASE64 }}
@@ -124,7 +126,7 @@ jobs:
           chmod 600 signing/keystore.properties
 
       - name: Build signed release APK for future in-place updates
-        if: ${{ secrets.NATIVOS_KEYSTORE_BASE64 != '' && secrets.NATIVOS_KEYSTORE_PASSWORD != '' && secrets.NATIVOS_KEY_ALIAS != '' && secrets.NATIVOS_KEY_PASSWORD != '' }}
+        if: env.NATIVOS_SIGNING_ENABLED == 'true'
         working-directory: android
         shell: bash
         run: |
@@ -148,7 +150,7 @@ jobs:
           retention-days: 14
 
       - name: Upload signed release APK
-        if: success() && secrets.NATIVOS_KEYSTORE_BASE64 != ''
+        if: success() && env.NATIVOS_SIGNING_ENABLED == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: nativos-signed-release-${{ github.sha }}
