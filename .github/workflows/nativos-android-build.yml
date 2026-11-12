@@ -1,11 +1,11 @@
-name: NativOS Android build (source unchanged)
+name: MT-OS Android build (source unchanged)
 
 on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/nativos-android-build.yml"
-      - "scripts/prepare-nativos-rootfs.sh"
+      - ".github/workflows/mt-os-android-build.yml"
+      - "scripts/prepare-mt-os-rootfs.sh"
       - "scripts/build-rootfs-asset.sh"
       - "linux/bridge-client/**"
       - "linux/config/**"
@@ -15,12 +15,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: nativos-android-build-${{ github.ref }}
+  group: mt-os-android-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Prepare Debian ARM64 rootfs and build NativOS APK
+    name: Prepare Debian ARM64 rootfs and build MT-OS APK
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -55,33 +55,33 @@ jobs:
           set -euxo pipefail
           docker pull --platform linux/arm64 debian:trixie
           cid="$(docker create --platform linux/arm64 debian:trixie)"
-          mkdir -p "$RUNNER_TEMP/nativos-rootfs"
-          docker export "$cid" | sudo tar -xpf - -C "$RUNNER_TEMP/nativos-rootfs"
+          mkdir -p "$RUNNER_TEMP/mt-os-rootfs"
+          docker export "$cid" | sudo tar -xpf - -C "$RUNNER_TEMP/mt-os-rootfs"
           docker rm "$cid"
-          test -x "$RUNNER_TEMP/nativos-rootfs/bin/bash"
-          test -f "$RUNNER_TEMP/nativos-rootfs/etc/debian_version"
-          grep -q '^13' "$RUNNER_TEMP/nativos-rootfs/etc/debian_version"
-          echo "Debian base: $(cat "$RUNNER_TEMP/nativos-rootfs/etc/debian_version")"
+          test -x "$RUNNER_TEMP/mt-os-rootfs/bin/bash"
+          test -f "$RUNNER_TEMP/mt-os-rootfs/etc/debian_version"
+          grep -q '^13' "$RUNNER_TEMP/mt-os-rootfs/etc/debian_version"
+          echo "Debian base: $(cat "$RUNNER_TEMP/mt-os-rootfs/etc/debian_version")"
           echo "Rootfs disk usage:"
-          sudo du -sh "$RUNNER_TEMP/nativos-rootfs"
+          sudo du -sh "$RUNNER_TEMP/mt-os-rootfs"
 
       - name: Enable ARM64 emulation for Debian rootfs preparation
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
-      - name: Install MT-Phoc, MT-Phosh and NativOS runtime dependencies
+      - name: Install MT-Phoc, MT-Phosh and MT-OS runtime dependencies
         shell: bash
         run: |
           set -euxo pipefail
-          chmod +x scripts/prepare-nativos-rootfs.sh scripts/build-rootfs-asset.sh
-          scripts/prepare-nativos-rootfs.sh \
-            "$RUNNER_TEMP/nativos-rootfs" \
-            "$GITHUB_WORKSPACE/android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz"
+          chmod +x scripts/prepare-mt-os-rootfs.sh scripts/build-rootfs-asset.sh
+          scripts/prepare-mt-os-rootfs.sh \
+            "$RUNNER_TEMP/mt-os-rootfs" \
+            "$GITHUB_WORKSPACE/android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz"
           cd android/app/src/main/assets/rootfs
-          sha256sum --check nativos-rootfs-arm64.tgz.sha256
-          ls -lh nativos-rootfs-arm64.tgz*
-          tar -tzf nativos-rootfs-arm64.tgz | grep -E '(^|/)usr/bin/(phoc|phosh|kgx)$|usr/share/nativos/rootfs-packages.txt'
+          sha256sum --check mt-os-rootfs-arm64.tgz.sha256
+          ls -lh mt-os-rootfs-arm64.tgz*
+          tar -tzf mt-os-rootfs-arm64.tgz | grep -E '(^|/)usr/bin/(phoc|phosh|kgx)$|usr/share/mt-os/rootfs-packages.txt'
 
       - name: Verify required existing app build inputs
         shell: bash
@@ -91,8 +91,8 @@ jobs:
           test -f android/gradlew
           test -f android/app/build.gradle.kts
           test -f android/app/src/main/xlorie-upstream/arm64-v8a/libXlorie.so
-          test -s android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz
-          test -s android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz.sha256
+          test -s android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz
+          test -s android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz.sha256
           ls -lah android/app/src/main/assets/rootfs/
 
       - name: Build debug APK using the repository's existing source
@@ -115,10 +115,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p signing
-          printf '%s' "$NATIVOS_KEYSTORE_BASE64" | base64 --decode > signing/nativos-release.jks
-          chmod 600 signing/nativos-release.jks
+          printf '%s' "$NATIVOS_KEYSTORE_BASE64" | base64 --decode > signing/mt-os-release.jks
+          chmod 600 signing/mt-os-release.jks
           cat > signing/keystore.properties <<EOF
-          storeFile=signing/nativos-release.jks
+          storeFile=signing/mt-os-release.jks
           storePassword=$NATIVOS_KEYSTORE_PASSWORD
           keyAlias=$NATIVOS_KEY_ALIAS
           keyPassword=$NATIVOS_KEY_PASSWORD
@@ -141,11 +141,11 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v5
         with:
-          name: nativos-debug-and-rootfs-${{ github.sha }}
+          name: mt-os-debug-and-rootfs-${{ github.sha }}
           path: |
             android/app/build/outputs/apk/debug/*.apk
-            android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz
-            android/app/src/main/assets/rootfs/nativos-rootfs-arm64.tgz.sha256
+            android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz
+            android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz.sha256
           if-no-files-found: ignore
           retention-days: 14
 
@@ -153,7 +153,7 @@ jobs:
         if: success() && env.NATIVOS_SIGNING_ENABLED == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: nativos-signed-release-${{ github.sha }}
+          name: mt-os-signed-release-${{ github.sha }}
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 90
