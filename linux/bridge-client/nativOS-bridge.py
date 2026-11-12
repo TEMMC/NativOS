@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-NativOS Bridge Client — Linux-side daemon
+MT-OS Bridge Client — Linux-side daemon
 
 Connects to the Android bridge service via Unix domain socket at
-/run/nativOS/bridge.sock and exposes hardware APIs as D-Bus services
+/run/mt-os/bridge.sock and exposes hardware APIs as D-Bus services
 that Phosh and Linux apps can use natively.
 
 This daemon implements:
@@ -15,7 +15,7 @@ This daemon implements:
 - PipeWire/PulseAudio audio integration
 
 Usage:
-    nativOS-bridge [--socket /run/nativOS/bridge.sock] [--debug]
+    mt-os-bridge [--socket /run/mt-os/bridge.sock] [--debug]
 """
 
 import argparse
@@ -30,11 +30,11 @@ import time
 
 # ── Configuration ──
 
-DEFAULT_SOCKET = "/run/nativOS/bridge.sock"
+DEFAULT_SOCKET = "/run/mt-os/bridge.sock"
 RECONNECT_DELAY = 3  # seconds between reconnection attempts
 REQUEST_TIMEOUT = 10  # seconds
 
-logger = logging.getLogger("nativOS-bridge")
+logger = logging.getLogger("mt-os-bridge")
 
 
 class BridgeClient:
@@ -172,7 +172,7 @@ class BridgeClient:
                     logger.error(f"Event handler error for {key}: {e}")
 
 
-class NativOSBridge:
+class MT-OSBridge:
     """Main bridge daemon that connects Android APIs to Linux D-Bus services."""
 
     def __init__(self, socket_path: str):
@@ -185,7 +185,7 @@ class NativOSBridge:
         signal.signal(signal.SIGTERM, self._shutdown)
         signal.signal(signal.SIGINT, self._shutdown)
 
-        logger.info("NativOS bridge client starting...")
+        logger.info("MT-OS bridge client starting...")
 
         # Register event handlers
         self._register_event_handlers()
@@ -204,7 +204,7 @@ class NativOSBridge:
             time.sleep(1)
 
         self.client.disconnect()
-        logger.info("NativOS bridge client stopped")
+        logger.info("MT-OS bridge client stopped")
 
     def _on_connected(self):
         """Called when successfully connected to the bridge."""
@@ -295,7 +295,7 @@ class NativOSBridge:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="NativOS bridge client daemon")
+    parser = argparse.ArgumentParser(description="MT-OS bridge client daemon")
     parser.add_argument(
         "--socket", default=DEFAULT_SOCKET,
         help=f"Path to bridge Unix socket (default: {DEFAULT_SOCKET})"
@@ -310,7 +310,7 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    bridge = NativOSBridge(args.socket)
+    bridge = MT-OSBridge(args.socket)
     bridge.start()
 
 
