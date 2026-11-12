@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/mt-os-android-build.yml"
-      - "scripts/prepare-mt-os-rootfs.sh"
+      - ".github/workflows/nativos-android-build.yml"
+      - "scripts/prepare-nativos-rootfs.sh"
       - "scripts/build-rootfs-asset.sh"
       - "linux/bridge-client/**"
       - "linux/config/**"
@@ -74,8 +74,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          chmod +x scripts/prepare-mt-os-rootfs.sh scripts/build-rootfs-asset.sh
-          scripts/prepare-mt-os-rootfs.sh \
+          chmod +x scripts/prepare-nativos-rootfs.sh scripts/build-rootfs-asset.sh
+          scripts/prepare-nativos-rootfs.sh \
             "$RUNNER_TEMP/mt-os-rootfs" \
             "$GITHUB_WORKSPACE/android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz"
           cd android/app/src/main/assets/rootfs
