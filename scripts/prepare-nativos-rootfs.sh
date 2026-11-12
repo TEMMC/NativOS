@@ -33,14 +33,16 @@ for mountpoint in proc sys dev dev/pts; do
   sudo mkdir -p "$ROOTFS/$mountpoint"
 done
 sudo mountpoint -q "$ROOTFS/proc" || sudo mount -t proc proc "$ROOTFS/proc"
-sudo mountpoint -q "$ROOTFS/sys" || sudo mount --rbind /sys "$ROOTFS/sys"
+# Mount a fresh sysfs instance instead of recursively exposing the runner host /sys.
+# A recursive bind inherits dozens of host kernel pseudo-files and nested mounts.
+sudo mountpoint -q "$ROOTFS/sys" || sudo mount -t sysfs sysfs "$ROOTFS/sys"
 sudo mountpoint -q "$ROOTFS/dev" || sudo mount --rbind /dev "$ROOTFS/dev"
 sudo mountpoint -q "$ROOTFS/dev/pts" || sudo mount --bind /dev/pts "$ROOTFS/dev/pts"
 
 cleanup_chroot_mounts() {
   sudo umount -R "$ROOTFS/dev/pts" 2>/dev/null || true
   sudo umount -R "$ROOTFS/dev" 2>/dev/null || true
-  sudo umount -R "$ROOTFS/sys" 2>/dev/null || true
+  sudo umount "$ROOTFS/sys" 2>/dev/null || true
   sudo umount -R "$ROOTFS/proc" 2>/dev/null || true
 }
 trap cleanup_chroot_mounts EXIT
