@@ -7,6 +7,7 @@ on:
       - ".github/workflows/nativos-android-build.yml"
       - "scripts/prepare-nativos-rootfs.sh"
       - "scripts/build-rootfs-asset.sh"
+      - "android/**"
       - "linux/bridge-client/**"
       - "linux/config/**"
   workflow_dispatch:
