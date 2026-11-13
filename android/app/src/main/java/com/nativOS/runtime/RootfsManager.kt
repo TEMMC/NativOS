@@ -16,7 +16,8 @@ class RootfsManager(private val context: Context) {
     companion object {
         private const val TAG = "NativOS.RootfsManager"
         private const val BUFFER_SIZE = 8192
-        private const val BUNDLED_ROOTFS_ASSET = "rootfs/nativos-rootfs-arm64.tgz"
+        private const val BUNDLED_ROOTFS_ASSET = "rootfs/mt-os-rootfs-arm64.tgz"
+        private const val BUNDLED_DISTRO = "debian"
 
         val DISTRO_URLS = mapOf(
             "ubuntu" to "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz",
@@ -58,8 +59,8 @@ class RootfsManager(private val context: Context) {
 
         return try {
             downloadDir.mkdirs()
-            val target = File(downloadDir, "$DEFAULT_DISTRO-rootfs.tar.gz")
-            val temporary = File(downloadDir, "$DEFAULT_DISTRO-rootfs.tar.gz.part")
+            val target = File(downloadDir, "$BUNDLED_DISTRO-rootfs.tar.gz")
+            val temporary = File(downloadDir, "$BUNDLED_DISTRO-rootfs.tar.gz.part")
             onProgress(0.0, "Preparing bundled Linux system...")
             var copied = 0L
             var lastReportedPercent = -1
@@ -92,12 +93,12 @@ class RootfsManager(private val context: Context) {
             if (!temporary.renameTo(target)) {
                 throw IllegalStateException("Could not finalize staged rootfs")
             }
-            configFile.writeText(DEFAULT_DISTRO)
-            onProgress(1.0, "Bundled Linux system ready")
+            configFile.writeText(BUNDLED_DISTRO)
+            onProgress(1.0, "Bundled Debian system ready")
             Log.i(TAG, "Staged bundled rootfs (${copied / (1024 * 1024)} MiB)")
             true
         } catch (error: Throwable) {
-            File(downloadDir, "$DEFAULT_DISTRO-rootfs.tar.gz.part").delete()
+            File(downloadDir, "$BUNDLED_DISTRO-rootfs.tar.gz.part").delete()
             Log.e(TAG, "Could not stage bundled rootfs", error)
             false
         }
@@ -109,6 +110,10 @@ class RootfsManager(private val context: Context) {
      * readiness marker by itself. Without the touchscreen schema Phosh aborts
      * immediately and the X11 cursor visibly flickers in a restart loop.
      */
+    /**
+     * Validate the Phosh runtime prepared into the bundled Debian image.
+     * First boot must never run apt or require network access.
+     */
     fun ensurePhoshRuntime(chrootManager: ChrootManager): Boolean {
         val schema = File(
             rootfsDir,
@@ -118,68 +123,31 @@ class RootfsManager(private val context: Context) {
             rootfsDir,
             "usr/lib/aarch64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-svg.so"
         )
-        if (schema.exists() && svgLoader.exists()) return true
+        if (!schema.isFile || !svgLoader.isFile) {
+            Log.e(TAG, "Bundled Debian image is missing required Phosh runtime files; rebuild the rootfs")
+            return false
+        }
 
-        Log.w(TAG, "Phosh runtime components missing; repairing interrupted provisioning")
         val result = chrootManager.execChroot(
             """
-                dpkg --configure -a || true
-                apt-get update || exit 1
-                TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
-                    apt-get install -y --no-install-recommends \
-                    gnome-settings-daemon-common librsvg2-common || exit 1
-                glib-compile-schemas /usr/share/glib-2.0/schemas || exit 1
-                GDK_LOADER=${'$'}(find /usr/lib -name gdk-pixbuf-query-loaders | head -n 1)
-                if [ -x "${'$'}GDK_LOADER" ]; then
-                    "${'$'}GDK_LOADER" > "${'$'}(dirname "${'$'}GDK_LOADER")/2.10.0/loaders.cache" || exit 1
+                glib-compile-schemas /usr/share/glib-2.0/schemas &&
+                GDK_LOADER=\$(find /usr/lib -name gdk-pixbuf-query-loaders | head -n 1) &&
+                if [ -x "\$GDK_LOADER" ]; then
+                    "\$GDK_LOADER" > "\$(dirname "\$GDK_LOADER")/2.10.0/loaders.cache"
                 fi
                 gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
                 gtk-update-icon-cache -f -t /usr/share/icons/Adwaita 2>/dev/null || true
-                test -f /usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml
-                test -f /usr/lib/aarch64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-svg.so
             """.trimIndent()
         )
-        if (result == 0 && schema.exists() && svgLoader.exists()) {
-            Log.i(TAG, "Phosh runtime schemas and SVG loader repaired")
-            return true
-        }
-        Log.e(TAG, "Could not repair Phosh runtime components (exit $result)")
-        return false
+        return result == 0
     }
 
-    /** Install the adaptive Wayland terminal and remove the two legacy XTerm launchers. */
+    /** Validate the preinstalled adaptive terminal without downloading packages. */
     fun ensureProfessionalTerminal(chrootManager: ChrootManager): Boolean {
         val console = File(rootfsDir, "usr/bin/kgx")
-        val legacyXterm = File(rootfsDir, "usr/bin/xterm")
-        val legacyGnomeTerminal = File(rootfsDir, "usr/bin/gnome-terminal")
-        if (console.exists() && !legacyXterm.exists() && !legacyGnomeTerminal.exists()) return true
-
-        val result = chrootManager.execChroot(
-            """
-                # A previously interrupted optional package must not prevent the
-                # terminal migration from repairing the installation.
-                dpkg --configure -a || true
-                if ! command -v kgx >/dev/null 2>&1; then
-                    apt-get update || exit 1
-                    TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
-                        apt-get install -y --no-install-recommends gnome-console || exit 1
-                fi
-                # XTerm and UXTerm are supplied by the same package. Keep the proven
-                # adaptive Console installed before removing either legacy terminal.
-                rm -f /usr/share/applications/debian-xterm.desktop \
-                    /usr/share/applications/debian-uxterm.desktop \
-                    /usr/share/applications/org.gnome.Terminal.desktop
-                TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive \
-                    apt-get purge -y xterm gnome-terminal gnome-terminal-data || exit 1
-                update-desktop-database /usr/share/applications 2>/dev/null || true
-            """.trimIndent()
-        )
-        if (result == 0) {
-            Log.i(TAG, "GNOME Console ready; legacy terminal launchers removed")
-        } else {
-            Log.w(TAG, "Could not provision GNOME Console (exit $result)")
-        }
-        return result == 0
+        if (console.isFile && console.canExecute()) return true
+        Log.e(TAG, "Bundled Debian image is missing GNOME Console; rebuild the rootfs")
+        return false
     }
 
     /** Add or repair the signed per-user Flathub remote used by GNOME Software. */
