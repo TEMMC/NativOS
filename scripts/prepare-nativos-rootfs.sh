@@ -172,8 +172,7 @@ for required in \
   "$ROOTFS/usr/bin/phoc" \
   "$ROOTFS/usr/bin/phosh" \
   "$ROOTFS/usr/bin/kgx" \
-  "$ROOTFS/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml" \
-  "$ROOTFS/usr/lib/aarch64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-svg.so"; do
+  "$ROOTFS/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml"; do
   if [ ! -e "$required" ]; then
     echo "::error::Required rootfs component is missing: $required"
     exit 1
