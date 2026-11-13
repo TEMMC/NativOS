@@ -137,7 +137,7 @@ run_target '
   apt-get install -y --reinstall --no-install-recommends librsvg2-common
   dpkg --configure -a
   dpkg-query -W librsvg2-common
-  find /usr/lib -type f -name libpixbufloader-svg.so -print -quit | grep -q .
+  find /usr/lib -name libpixbufloader-svg.so -print -quit | grep -q .
 '
 
 run_target '
@@ -177,7 +177,7 @@ for required in \
     exit 1
   fi
 done
-if ! sudo find "$ROOTFS/usr/lib" -type f -name libpixbufloader-svg.so -print -quit | grep -q .; then
+if ! sudo find "$ROOTFS/usr/lib" -name libpixbufloader-svg.so -print -quit | grep -q .; then
   echo "::error::librsvg2-common is installed but its GDK-Pixbuf SVG loader is missing."
   exit 1
 fi
