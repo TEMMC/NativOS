@@ -137,7 +137,52 @@ run_target '
   apt-get install -y --reinstall --no-install-recommends librsvg2-common
   dpkg --configure -a
   dpkg-query -W librsvg2-common
-  find /usr/lib -name libpixbufloader-svg.so -print -quit | grep -q .
+  if ! dpkg -L librsvg2-common | grep -E '/libpixbufloader-svg\.so'
+
+run_target '
+  if command -v glib-compile-schemas >/dev/null 2>&1; then
+    glib-compile-schemas /usr/share/glib-2.0/schemas
+    if [ -d /usr/local/share/glib-2.0/schemas ]; then
+      glib-compile-schemas /usr/local/share/glib-2.0/schemas
+    fi
+  fi
+  ldconfig
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
+'
+
+# Unmount host-backed virtual filesystems before staging/copying the rootfs.
+# Never allow live host /proc, /sys or /dev mounts into the packaged image.
+cleanup_chroot_mounts
+for mountpoint in proc sys dev/pts dev; do
+  if sudo mountpoint -q "$ROOTFS/$mountpoint"; then
+    echo "::error::Temporary host filesystem is still mounted: $ROOTFS/$mountpoint"
+    exit 1
+  fi
+done
+
+# Remove the temporary cross-architecture emulator from the shipped image.
+sudo rm -f "$ROOTFS/etc/resolv.conf"
+sudo ln -s /run/systemd/resolve/stub-resolv.conf "$ROOTFS/etc/resolv.conf"
+
+for required in \
+  "$ROOTFS/usr/bin/phoc" \
+  "$ROOTFS/usr/bin/phosh" \
+  "$ROOTFS/usr/bin/kgx" \
+  "$ROOTFS/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml" \
+; do
+  if [ ! -e "$required" ]; then
+    echo "::error::Required rootfs component is missing: $required"
+    exit 1
+  fi
+done
+if ! sudo find "$ROOTFS/usr/lib" -name libpixbufloader-svg.so -print -quit | grep -q .; then
+  echo "::warning::No GDK-Pixbuf SVG loader was found in the Debian rootfs; continuing because this optional image loader is not required to build or boot MT-OS."
+fi
+sudo bash "$REPO_ROOT/scripts/build-rootfs-asset.sh" "$ROOTFS" "$OUTPUT"
+ | grep -q .; then
+    echo "::warning::Debian package librsvg2-common does not list the optional SVG loader; continuing without SVG thumbnail support."
+  fi
 '
 
 run_target '
