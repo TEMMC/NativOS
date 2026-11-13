@@ -131,9 +131,9 @@ class RootfsManager(private val context: Context) {
         val result = chrootManager.execChroot(
             """
                 glib-compile-schemas /usr/share/glib-2.0/schemas &&
-                GDK_LOADER=${' /usr/lib -name gdk-pixbuf-query-loaders | head -n 1) &&
-                if [ -x "${'" ]; then
-                    "\$GDK_LOADER" > "${' "\$GDK_LOADER")/2.10.0/loaders.cache"
+                GDK_LOADER=${'$'}(find /usr/lib -name gdk-pixbuf-query-loaders | head -n 1) &&
+                if [ -x "${'$'}GDK_LOADER" ]; then
+                    "${'$'}GDK_LOADER" > "${'$'}(dirname "${'$'}GDK_LOADER")/2.10.0/loaders.cache"
                 fi
                 gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
                 gtk-update-icon-cache -f -t /usr/share/icons/Adwaita 2>/dev/null || true
