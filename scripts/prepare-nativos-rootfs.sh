@@ -61,7 +61,7 @@ run_target '
   apt-get install -y --no-install-recommends \
     ca-certificates curl xz-utils tar gzip dbus dbus-x11 systemd \
     phosh phoc gnome-console gnome-settings-daemon gsettings-desktop-schemas \
-    adwaita-icon-theme hicolor-icon-theme libglib2.0-bin \
+    librsvg2-common adwaita-icon-theme hicolor-icon-theme libglib2.0-bin \
     xwayland weston x11-utils x11-xserver-utils locales \
     python3 python3-dbus python3-gi python3-pip \
     squeekboard pipewire pipewire-pulse wireplumber feedbackd \
@@ -160,7 +160,8 @@ for required in \
   "$ROOTFS/usr/bin/phoc" \
   "$ROOTFS/usr/bin/phosh" \
   "$ROOTFS/usr/bin/kgx" \
-  "$ROOTFS/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml"; do
+  "$ROOTFS/usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml" \
+  "$ROOTFS/usr/lib/aarch64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-svg.so"; do
   if [ ! -e "$required" ]; then
     echo "::error::Required rootfs component is missing: $required"
     exit 1
