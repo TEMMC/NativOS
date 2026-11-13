@@ -638,23 +638,18 @@ class KioskActivity : Activity() {
 
             // Step 2: Download + extract rootfs if needed
             if (!rootfsManager.isRootfsReady()) {
-                // Production builds carry a ready rootfs. Development builds and
-                // damaged assets retain the resumable Ubuntu download as recovery.
+                // Production releases must use the Debian rootfs bundled in the APK.
+                // Never fall back to downloading a different distro during first boot.
                 val bundled = rootfsManager.stageBundledRootfs { progress, status ->
-                    updateOverlay(0.05 + progress * 0.45, status, "No network required")
+                    updateOverlay(0.05 + progress * 0.45, status, "Offline setup — no network required")
                 }
                 if (!bundled) {
-                    updateOverlay(0.05, "Downloading Linux filesystem...", "First boot — this takes a few minutes")
-                    bootFailed = false
-                    rootfsManager.downloadRootfs { progress, status ->
-                        if (progress < 0) {
-                            bootFailed = true
-                            updateOverlay(-1.0, "Download failed", status)
-                        } else {
-                            updateOverlay(0.05 + progress * 0.45, status, "")
-                        }
-                    }
-                    if (bootFailed) return
+                    updateOverlay(
+                        -1.0,
+                        "Bundled Linux system unavailable",
+                        "This release is missing its Debian rootfs. Reinstall a complete MT-OS release."
+                    )
+                    return
                 }
 
                 // Extract
@@ -687,26 +682,14 @@ class KioskActivity : Activity() {
             // Step 4: Install essential packages (dbus is required for any session)
             updateOverlay(0.74, "Checking essential packages...", "")
             if (!chrootManager.isPhoshInstalled()) {
-                updateOverlay(0.75, "Installing Phosh desktop...", "First boot — installing packages (5-15 min)")
-                bootFailed = false
-                rootfsManager.installPhosh(chrootManager) { progress, status ->
-                    if (progress < 0) {
-                        bootFailed = true
-                        updateOverlay(-1.0, "Phosh installation failed", status)
-                    } else {
-                        updateOverlay(0.75 + progress * 0.20, status, "")
-                    }
-                }
-                if (bootFailed) {
-                    // Even if Phosh failed, leave the rootfs package database usable.
-                    updateOverlay(0.90, "Installing minimal session...", "Phosh failed, trying fallback")
-                    try {
-                        chrootManager.execChroot(
-                            "TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends dbus dbus-x11")
-                    } catch (_: Exception) {}
-                }
+                updateOverlay(
+                    -1.0,
+                    "Desktop components missing",
+                    "The bundled Debian image is incomplete. Install a rebuilt MT-OS release."
+                )
+                return
             } else {
-                updateOverlay(0.95, "Phosh desktop found", "")
+                updateOverlay(0.95, "Bundled Phosh desktop found", "No package downloads required")
             }
 
             // A first-boot install can be interrupted after phoc is unpacked but
