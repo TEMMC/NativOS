@@ -130,6 +130,16 @@ for package in gnome-calls chatty megapixels gnome-contacts gnome-clocks gnome-c
   run_target "export DEBIAN_FRONTEND=noninteractive; apt-get install -y --no-install-recommends $package" || echo "::warning::Optional Debian package unavailable: $package"
 done
 
+# Reinstall the SVG loader after optional desktop-app installs and validate
+# its actual multiarch location instead of assuming a hard-coded path.
+run_target '
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get install -y --reinstall --no-install-recommends librsvg2-common
+  dpkg --configure -a
+  dpkg-query -W librsvg2-common
+  find /usr/lib -type f -name libpixbufloader-svg.so -print -quit | grep -q .
+'
+
 run_target '
   if command -v glib-compile-schemas >/dev/null 2>&1; then
     glib-compile-schemas /usr/share/glib-2.0/schemas
@@ -167,4 +177,8 @@ for required in \
     exit 1
   fi
 done
+if ! sudo find "$ROOTFS/usr/lib" -type f -name libpixbufloader-svg.so -print -quit | grep -q .; then
+  echo "::error::librsvg2-common is installed but its GDK-Pixbuf SVG loader is missing."
+  exit 1
+fi
 sudo bash "$REPO_ROOT/scripts/build-rootfs-asset.sh" "$ROOTFS" "$OUTPUT"
