@@ -242,7 +242,7 @@ class SystemAppRemoverActivity : Activity() {
         Thread({
             val result = runCatching {
                 val manager = SystemAppManager(this)
-                if (disable) manager.disable(packages) else manager.restoreAllChangedByMT-OS()
+                if (disable) manager.disable(packages) else manager.restoreAllChangedByMTOS()
             }
             runOnUiThread {
                 status.text = result.fold(

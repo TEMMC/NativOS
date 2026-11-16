@@ -34,7 +34,7 @@ class SystemAppManager(context: Context) {
 
     fun restore(packages: Collection<String>): ActionResult = change(packages, disable = false)
 
-    fun restoreAllChangedByMT-OS(): ActionResult = restore(changedPackages())
+    fun restoreAllChangedByMTOS(): ActionResult = restore(changedPackages())
 
     fun changedPackages(): Set<String> = prefs.getStringSet(CHANGED_PACKAGES, emptySet())?.toSet().orEmpty()
 
