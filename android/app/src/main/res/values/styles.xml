@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.NativOS" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+    <style name="Theme.MTOS" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
         <item name="colorPrimary">#FF1A1A2E</item>
         <item name="colorPrimaryDark">#FF0F0F1A</item>
         <item name="colorAccent">#FF6C63FF</item>
     </style>
 
-    <style name="Theme.NativOS.Fullscreen" parent="Theme.NativOS">
+    <style name="Theme.MTOS.Fullscreen" parent="Theme.MTOS">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
         <item name="android:windowFullscreen">true</item>
@@ -14,7 +14,7 @@
         <item name="android:windowBackground">#FFFF0000</item>
     </style>
 
-    <style name="Theme.NativOS.Settings" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <style name="Theme.MTOS.Settings" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/nativos_primary</item>
         <item name="colorSecondary">@color/nativos_success</item>
         <item name="android:fontFamily">sans</item>
