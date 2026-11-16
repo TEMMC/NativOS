@@ -700,7 +700,7 @@ class KioskActivity : Activity() {
                 updateOverlay(
                     -1.0,
                     "Desktop repair failed",
-                    "Connect to the internet and reopen MT-OS"
+                    "A required Phosh runtime file is missing or could not be validated. This is an incomplete desktop image, not a network problem. Install the latest complete MT-OS build."
                 )
                 return
             }
