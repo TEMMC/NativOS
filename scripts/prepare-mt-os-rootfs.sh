@@ -145,7 +145,7 @@ run_target '
     find /usr/share/glib-2.0/schemas -maxdepth 1 -type f -name "*.gschema.xml" | head -n 20
     exit 1
   fi
-  SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader-svg.so -print -quit)"
+  SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader_svg.so -print -quit)"
   if [ -z "$SVG_LOADER" ]; then
     echo "ERROR: librsvg SVG loader was not installed"
     dpkg -L librsvg2-common
@@ -208,7 +208,7 @@ for required in \
     exit 1
   fi
 done
-SVG_LOADER="$(sudo find "$ROOTFS/usr/lib" -type f -name libpixbufloader-svg.so -print -quit)"
+SVG_LOADER="$(sudo find "$ROOTFS/usr/lib" -type f -name libpixbufloader_svg.so -print -quit)"
 if [ -z "$SVG_LOADER" ]; then
   echo "::error::Required Phosh component missing: librsvg GDK-Pixbuf SVG loader."
   exit 1
