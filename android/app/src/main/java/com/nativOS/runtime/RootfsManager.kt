@@ -283,10 +283,22 @@ class RootfsManager(private val context: Context) {
     }
 
     private fun configureRootfs() {
-        File(rootfsDir, "etc/resolv.conf").apply {
-            parentFile?.mkdirs()
-            writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\nnameserver 1.1.1.1\n")
+        // Debian may provide resolv.conf as a symlink into /run/systemd/resolve.
+        // That target is absent during Android first boot, so replace the link
+        // with a regular file before writing DNS settings.
+        val etcDir = File(rootfsDir, "etc")
+        if (java.nio.file.Files.isSymbolicLink(etcDir.toPath())) {
+            java.nio.file.Files.delete(etcDir.toPath())
         }
+        etcDir.mkdirs()
+
+        val resolvConf = File(etcDir, "resolv.conf")
+        if (java.nio.file.Files.isSymbolicLink(resolvConf.toPath())) {
+            java.nio.file.Files.delete(resolvConf.toPath())
+        } else if (resolvConf.exists() && !resolvConf.isFile) {
+            resolvConf.delete()
+        }
+        resolvConf.writeText("nameserver 8.8.8.8\\nnameserver 8.8.4.4\\nnameserver 1.1.1.1\\n")
         File(rootfsDir, "etc/apt/apt.conf.d").mkdirs()
         File(rootfsDir, "etc/apt/apt.conf.d/99-disable-sandbox").writeText("APT::Sandbox::User \"root\";\n")
         File(rootfsDir, "etc/hostname").writeText("nativOS\n")
