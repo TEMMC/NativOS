@@ -86,11 +86,11 @@ val verifyBundledRootfs by tasks.registering {
 }
 
 android {
-    namespace = "com.nativOS"
+    namespace = "com.mt.os"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.nativOS"
+        applicationId = "com.mt.os"
         minSdk = 28  // Android 9+ (modern root tools, Camera2 stable)
         targetSdk = 35
         versionCode = 1
