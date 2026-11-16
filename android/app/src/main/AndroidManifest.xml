@@ -104,7 +104,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="MT-OS"
         android:supportsRtl="true"
-        android:theme="@style/Theme.NativOS"
+        android:theme="@style/Theme.MTOS"
         android:usesCleartextTraffic="true"
         tools:targetApi="35">
 
@@ -125,7 +125,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:theme="@style/Theme.NativOS.Fullscreen">
+            android:theme="@style/Theme.MTOS.Fullscreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -142,13 +142,13 @@
             android:name=".settings.SettingsActivity"
             android:exported="true"
             android:label="MT-OS Settings"
-            android:theme="@style/Theme.NativOS.Settings" />
+            android:theme="@style/Theme.MTOS.Settings" />
 
         <activity
             android:name=".settings.SystemAppRemoverActivity"
             android:exported="false"
             android:label="System App Remover"
-            android:theme="@style/Theme.NativOS.Settings" />
+            android:theme="@style/Theme.MTOS.Settings" />
 
         <!-- Optional tile users can add to Android's Quick Settings panel. -->
         <service
