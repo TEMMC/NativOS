@@ -114,24 +114,69 @@ class RootfsManager(private val context: Context) {
      * Validate the Phosh runtime prepared into the bundled Debian image.
      * First boot must never run apt or require network access.
      */
-    fun ensurePhoshRuntime(chrootManager: ChrootManager): Boolean {
-        val schema = File(
-            rootfsDir,
-            "usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml"
-        )
-        if (!schema.isFile) {
-            Log.e(TAG, "Bundled Debian image is missing the GNOME Settings Daemon schema: ${schema.absolutePath}")
-            return false
-        }
+    /**
+     * On the first launch, fetch missing Debian runtime dependencies if needed.
+     * The bundled MT-Phoc/MT-Phosh executables are deliberately not replaced.
+     */
+    fun ensureFirstLaunchDependencies(chrootManager: ChrootManager): Boolean {
+        val marker = File(baseDir, "FIRST_LAUNCH_DEPENDENCIES_READY")
+        val schema = File(rootfsDir, "usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml")
+        val svgLoader = rootfsDir.walkTopDown().any { it.isFile && it.name == "libpixbufloader-svg.so" }
+        val terminal = File(rootfsDir, "usr/bin/kgx").canExecute()
+        val needRepair = !marker.isFile || !schema.isFile || !svgLoader || !terminal
+        if (!needRepair) return true
 
-        // Debian multiarch layouts can place the SVG loader in different
-        // directories. Discover it instead of assuming one hard-coded path.
+        Log.i(TAG, "First-launch dependency check: downloading any missing Debian runtime packages")
         val result = chrootManager.execChroot(
             """
                 set -e
-                SVG_LOADER=${'
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update
+                apt-get install -y --no-install-recommends \
+                    dbus dbus-x11 gnome-settings-daemon gsettings-desktop-schemas \
+                    librsvg2-common libgdk-pixbuf-2.0-bin libglib2.0-bin \
+                    gnome-console adwaita-icon-theme hicolor-icon-theme \
+                    xwayland squeekboard pipewire pipewire-pulse wireplumber feedbackd
+                glib-compile-schemas /usr/share/glib-2.0/schemas
+                SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader-svg.so -print -quit)"
+                test -n "$SVG_LOADER"
+                GDK_QUERY="$(find /usr -type f -name gdk-pixbuf-query-loaders -perm /111 -print -quit)"
+                if [ -n "$GDK_QUERY" ]; then
+                    "$GDK_QUERY" > "$(dirname "$GDK_QUERY")/2.10.0/loaders.cache"
+                fi
+                test -s /usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml
+                test -x /usr/bin/kgx
+            """.trimIndent()
+        )
+        if (result == 0) {
+            marker.writeText("ready")
+            Log.i(TAG, "First-launch dependencies are ready")
+            return true
+        }
+        Log.e(TAG, "First-launch dependency download/install failed (exit $result)")
+        return false
     }
 
+    /** Validate Phosh runtime files after first-launch dependency repair. */
+    fun ensurePhoshRuntime(chrootManager: ChrootManager): Boolean {
+        val schema = File(rootfsDir, "usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml")
+        if (!schema.isFile) {
+            Log.e(TAG, "Missing GNOME Settings Daemon schema: ${schema.absolutePath}")
+            return false
+        }
+        val result = chrootManager.execChroot(
+            """
+                set -e
+                SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader-svg.so -print -quit)"
+                test -n "$SVG_LOADER"
+                glib-compile-schemas /usr/share/glib-2.0/schemas
+                gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+                gtk-update-icon-cache -f -t /usr/share/icons/Adwaita 2>/dev/null || true
+            """.trimIndent()
+        )
+        if (result != 0) Log.e(TAG, "Phosh runtime validation failed (exit $result)")
+        return result == 0
+    }
     /** Validate the preinstalled adaptive terminal without downloading packages. */
     fun ensureProfessionalTerminal(chrootManager: ChrootManager): Boolean {
         val console = File(rootfsDir, "usr/bin/kgx")
