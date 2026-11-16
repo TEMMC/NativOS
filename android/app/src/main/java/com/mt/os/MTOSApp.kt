@@ -1,4 +1,4 @@
-package com.mtOS
+package com.mt.os
 
 import android.app.Application
 import android.util.Log
@@ -9,13 +9,13 @@ import android.util.Log
  * Initializes the bridge service infrastructure and chroot runtime
  * at application startup.
  */
-class MT-OSApp : Application() {
+class MTOSApp : Application() {
 
     companion object {
         const val TAG = "MT-OS"
 
         @Volatile
-        lateinit var instance: MT-OSApp
+        lateinit var instance: MTOSApp
             private set
     }
 
