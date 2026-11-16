@@ -61,7 +61,7 @@ run_target '
   apt-get install -y --no-install-recommends \
     ca-certificates curl xz-utils tar gzip dbus dbus-x11 systemd \
     phosh phoc gnome-console gnome-settings-daemon gsettings-desktop-schemas \
-    librsvg2-common libgdk-pixbuf-2.0-bin adwaita-icon-theme hicolor-icon-theme libglib2.0-bin \
+    librsvg2-common libgdk-pixbuf2.0-bin adwaita-icon-theme hicolor-icon-theme libglib2.0-bin \
     xwayland weston x11-utils x11-xserver-utils locales \
     python3 python3-dbus python3-gi python3-pip \
     squeekboard pipewire pipewire-pulse wireplumber feedbackd \
@@ -136,9 +136,9 @@ run_target '
   export DEBIAN_FRONTEND=noninteractive
   apt-get install -y --reinstall --no-install-recommends \
     gnome-settings-daemon gsettings-desktop-schemas \
-    librsvg2-common libgdk-pixbuf-2.0-bin libglib2.0-bin
+    librsvg2-common libgdk-pixbuf2.0-bin libglib2.0-bin
   dpkg --configure -a
-  dpkg-query -W gnome-settings-daemon gsettings-desktop-schemas librsvg2-common libgdk-pixbuf-2.0-bin
+  dpkg-query -W gnome-settings-daemon gsettings-desktop-schemas librsvg2-common libgdk-pixbuf2.0-bin
   test -s /usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml
   SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader-svg.so -print -quit)"
   test -n "$SVG_LOADER"
