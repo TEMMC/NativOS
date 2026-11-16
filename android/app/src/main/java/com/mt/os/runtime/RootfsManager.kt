@@ -445,7 +445,10 @@ gcc -shared -fPIC -o /usr/local/lib/libmtos-close-range.so /tmp/close_range_comp
 
             onProgress(0.95, "Setting up Firefox...")
             chrootManager.execChroot("""
-                bash -c "add-apt-repository -y ppa:mozillateam/ppa && echo 'Package: *\nPin: release o=LP-PPA-mozillateam\nPin-Priority: 1001\n\nPackage: firefox\nPin: version 1:1snap1-0ubuntu2\nPin-Priority: -1' > /etc/apt/preferences.d/mozilla-firefox && apt-get update && DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y --no-install-recommends firefox"
+                add-apt-repository -y ppa:mozillateam/ppa
+                printf '%s\\n' 'Package: *' 'Pin: release o=LP-PPA-mozillateam' 'Pin-Priority: 1001' '' 'Package: firefox' 'Pin: version 1:1snap1-0ubuntu2' 'Pin-Priority: -1' > /etc/apt/preferences.d/mozilla-firefox
+                apt-get update
+                DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y --no-install-recommends firefox
             """.trimIndent())
 
             onProgress(0.97, "Configuring Flathub...")
@@ -453,7 +456,13 @@ gcc -shared -fPIC -o /usr/local/lib/libmtos-close-range.so /tmp/close_range_comp
 
             onProgress(0.98, "Building icon caches...")
             chrootManager.execChroot("""
-                bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin && GDK_LOADER=${'$'}(find /usr/lib -name gdk-pixbuf-query-loaders | head -n 1) && ${'$'}GDK_LOADER > ${'$'}(dirname ${'$'}GDK_LOADER)/2.10.0/loaders.cache && gtk-update-icon-cache -f -t /usr/share/icons/hicolor && gtk-update-icon-cache -f -t /usr/share/icons/Adwaita && glib-compile-schemas /usr/share/glib-2.0/schemas"
+                export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+                GDK_LOADER=$(find /usr/lib -name gdk-pixbuf-query-loaders | head -n 1)
+                test -n "$GDK_LOADER"
+                "$GDK_LOADER" > "$(dirname "$GDK_LOADER")/2.10.0/loaders.cache"
+                gtk-update-icon-cache -f -t /usr/share/icons/hicolor
+                gtk-update-icon-cache -f -t /usr/share/icons/Adwaita
+                glib-compile-schemas /usr/share/glib-2.0/schemas
             """.trimIndent())
 
             onProgress(1.0, "Phosh installed!")
