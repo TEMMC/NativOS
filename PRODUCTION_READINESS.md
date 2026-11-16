@@ -1,4 +1,4 @@
-# NativOS Production Readiness
+# MT-OS Production Readiness
 
 This is the sequential release checklist. Complete and verify one numbered step before starting the next.
 
@@ -70,4 +70,4 @@ This is the sequential release checklist. Complete and verify one numbered step 
 
 ## Release gate
 
-NativOS is production-ready only when all eight steps pass on the declared support matrix with no critical data-loss, security, boot, display, or recovery defects.
+MT-OS is production-ready only when all eight steps pass on the declared support matrix with no critical data-loss, security, boot, display, or recovery defects.
