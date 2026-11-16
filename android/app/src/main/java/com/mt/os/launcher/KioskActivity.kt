@@ -679,8 +679,27 @@ class KioskActivity : Activity() {
             chrootManager.bindX11Socket()
             AndroidAppIntegration.sync(this)
 
-            // Step 4: Install essential packages (dbus is required for any session)
-            updateOverlay(0.74, "Checking essential packages...", "")
+            // Step 4: On first launch, download and install any missing Debian
+            // desktop/runtime dependencies. Existing MT-Phoc and MT-Phosh binaries
+            // are preserved; this repairs Debian packages only.
+            updateOverlay(0.74, "Checking and downloading missing components...", "Internet is needed only if something is missing")
+            if (!rootfsManager.ensureFirstLaunchDependencies(chrootManager)) {
+                updateOverlay(
+                    -1.0,
+                    "Component download failed",
+                    "Connect to the internet and tap to retry. Your existing Linux files are preserved."
+                )
+                runOnUiThread {
+                    overlayLayout?.apply {
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener { retryAfterRootGrant() }
+                    }
+                }
+                return
+            }
+
+            // Step 4b: Verify the MT desktop executables are present.
             if (!chrootManager.isPhoshInstalled()) {
                 updateOverlay(
                     -1.0,
