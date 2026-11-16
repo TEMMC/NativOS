@@ -134,7 +134,7 @@ class RootfsManager(private val context: Context) {
                 apt-get update
                 apt-get install -y --no-install-recommends \
                     dbus dbus-x11 gnome-settings-daemon gsettings-desktop-schemas \
-                    librsvg2-common libgdk-pixbuf-2.0-bin libglib2.0-bin \
+                    librsvg2-common libgdk-pixbuf2.0-bin libglib2.0-bin \
                     gnome-console adwaita-icon-theme hicolor-icon-theme \
                     xwayland squeekboard pipewire pipewire-pulse wireplumber feedbackd
                 glib-compile-schemas /usr/share/glib-2.0/schemas
