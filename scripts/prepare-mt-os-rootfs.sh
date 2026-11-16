@@ -139,13 +139,28 @@ run_target '
     librsvg2-common libgdk-pixbuf2.0-bin libglib2.0-bin
   dpkg --configure -a
   dpkg-query -W gnome-settings-daemon gsettings-desktop-schemas librsvg2-common libgdk-pixbuf2.0-bin
-  test -s /usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml
+  SCHEMA="$(find /usr/share/glib-2.0/schemas -maxdepth 1 -type f -name "*settings-daemon*.gschema.xml" -print -quit)"
+  if [ -z "$SCHEMA" ]; then
+    echo "ERROR: GNOME Settings Daemon schemas were not installed"
+    find /usr/share/glib-2.0/schemas -maxdepth 1 -type f -name "*.gschema.xml" | head -n 20
+    exit 1
+  fi
   SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader-svg.so -print -quit)"
-  test -n "$SVG_LOADER"
+  if [ -z "$SVG_LOADER" ]; then
+    echo "ERROR: librsvg SVG loader was not installed"
+    dpkg -L librsvg2-common
+    exit 1
+  fi
+  echo "Verified Phosh schema: $SCHEMA"
   echo "Verified Phosh SVG loader: $SVG_LOADER"
   GDK_QUERY="$(find /usr -type f -name gdk-pixbuf-query-loaders -perm /111 -print -quit)"
-  test -n "$GDK_QUERY"
-  "$GDK_QUERY" > "$(dirname "$GDK_QUERY")/2.10.0/loaders.cache"
+  if [ -n "$GDK_QUERY" ]; then
+    CACHE_DIR="$(dirname "$GDK_QUERY")/2.10.0"
+    mkdir -p "$CACHE_DIR"
+    "$GDK_QUERY" > "$CACHE_DIR/loaders.cache"
+  else
+    echo "WARNING: gdk-pixbuf-query-loaders not found; package triggers should have generated the cache"
+  fi
 '
 run_target '
   export DEBIAN_FRONTEND=noninteractive
