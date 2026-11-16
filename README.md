@@ -48,7 +48,7 @@ The current alpha has been exercised on a Samsung Galaxy S23, Pixel 6a, Poco F1,
 
 ## Install MT-OS
 
-1. Open the [Releases page](https://github.com/TEMMC/NativOS/releases) on the rooted phone.
+1. Open the [Releases page](https://github.com/TEMMC/MT-OS/releases) on the rooted phone.
 2. Download the latest ARM64 APK.
 3. Allow your browser or file manager to install unknown applications when Android asks.
 4. Install and open MT-OS.
@@ -225,7 +225,7 @@ adb logcat | grep -iE 'mt-os|xlorie|phoc|phosh|flatpak|bwrap|mesa|vulkan'
 
 Include the phone model, Android version, ROM, root manager and version, MT-OS release, GPU, exact reproduction steps, screenshot, and terminal output. Remove personal information before posting logs.
 
-Report reproducible problems through [GitHub Issues](https://github.com/TEMMC/NativOS/issues).
+Report reproducible problems through [GitHub Issues](https://github.com/TEMMC/MT-OS/issues).
 
 ## Current limitations
 
