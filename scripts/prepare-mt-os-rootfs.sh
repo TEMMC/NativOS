@@ -61,7 +61,7 @@ run_target '
   apt-get install -y --no-install-recommends \
     ca-certificates curl xz-utils tar gzip dbus dbus-x11 systemd \
     phosh phoc gnome-console gnome-settings-daemon gsettings-desktop-schemas \
-    librsvg2-common adwaita-icon-theme hicolor-icon-theme libglib2.0-bin \
+    librsvg2-common libgdk-pixbuf-2.0-bin adwaita-icon-theme hicolor-icon-theme libglib2.0-bin \
     xwayland weston x11-utils x11-xserver-utils locales \
     python3 python3-dbus python3-gi python3-pip \
     squeekboard pipewire pipewire-pulse wireplumber feedbackd \
@@ -130,8 +130,23 @@ for package in gnome-calls chatty megapixels gnome-contacts gnome-clocks gnome-c
   run_target "export DEBIAN_FRONTEND=noninteractive; apt-get install -y --no-install-recommends $package" || echo "::warning::Optional Debian package unavailable: $package"
 done
 
-# Reinstall the SVG loader after optional desktop-app installs and validate
-# its actual multiarch location instead of assuming a hard-coded path.
+# Fetch and install every runtime component needed by the Phosh repair
+# check while building the APK's rootfs. The phone will not need internet.
+run_target '
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get install -y --reinstall --no-install-recommends \
+    gnome-settings-daemon gsettings-desktop-schemas \
+    librsvg2-common libgdk-pixbuf-2.0-bin libglib2.0-bin
+  dpkg --configure -a
+  dpkg-query -W gnome-settings-daemon gsettings-desktop-schemas librsvg2-common libgdk-pixbuf-2.0-bin
+  test -s /usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml
+  SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader-svg.so -print -quit)"
+  test -n "$SVG_LOADER"
+  echo "Verified Phosh SVG loader: $SVG_LOADER"
+  GDK_QUERY="$(find /usr -type f -name gdk-pixbuf-query-loaders -perm /111 -print -quit)"
+  test -n "$GDK_QUERY"
+  "$GDK_QUERY" > "$(dirname "$GDK_QUERY")/2.10.0/loaders.cache"
+'
 run_target '
   export DEBIAN_FRONTEND=noninteractive
   apt-get install -y --reinstall --no-install-recommends librsvg2-common
@@ -178,7 +193,16 @@ for required in \
     exit 1
   fi
 done
-if ! sudo find "$ROOTFS/usr/lib" -name libpixbufloader-svg.so -print -quit | grep -q .; then
-  echo "::warning::Optional GDK-Pixbuf SVG loader not found; continuing without SVG thumbnail support."
+SVG_LOADER="$(sudo find "$ROOTFS/usr/lib" -type f -name libpixbufloader-svg.so -print -quit)"
+if [ -z "$SVG_LOADER" ]; then
+  echo "::error::Required Phosh component missing: librsvg GDK-Pixbuf SVG loader."
+  exit 1
 fi
+GDK_QUERY="$(sudo find "$ROOTFS/usr" -type f -name gdk-pixbuf-query-loaders -perm /111 -print -quit)"
+if [ -z "$GDK_QUERY" ]; then
+  echo "::error::Required Phosh component missing: gdk-pixbuf-query-loaders."
+  exit 1
+fi
+echo "Verified bundled SVG loader: $SVG_LOADER"
+echo "Verified bundled GDK loader tool: $GDK_QUERY"
 sudo bash "$REPO_ROOT/scripts/build-rootfs-asset.sh" "$ROOTFS" "$OUTPUT"
