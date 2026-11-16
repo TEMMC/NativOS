@@ -2,10 +2,10 @@ package com.nativOS.settings
 
 import android.content.Context
 
-object NativOSPreferences {
+object MTOSPreferences {
     enum class OperatingMode { DESKTOP_APP, HOME_LAUNCHER, DEGOOGLED }
 
-    private const val FILE = "nativos_settings"
+    private const val FILE = "mtos_settings"
     private const val HIDE_SYSTEM_BARS = "hide_system_bars"
     private const val SHOW_ANDROID_APPS = "show_android_apps"
     private const val OPERATING_MODE = "operating_mode"
