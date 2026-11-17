@@ -139,10 +139,10 @@ class RootfsManager(private val context: Context) {
                     xwayland squeekboard pipewire pipewire-pulse wireplumber feedbackd
                 glib-compile-schemas /usr/share/glib-2.0/schemas
                 SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader-svg.so -print -quit)"
-                test -n "$SVG_LOADER"
+                test -n "${'$'}SVG_LOADER"
                 GDK_QUERY="$(find /usr -type f -name gdk-pixbuf-query-loaders -perm /111 -print -quit)"
-                if [ -n "$GDK_QUERY" ]; then
-                    "$GDK_QUERY" > "$(dirname "$GDK_QUERY")/2.10.0/loaders.cache"
+                if [ -n "${'$'}GDK_QUERY" ]; then
+                    "${'$'}GDK_QUERY" > "$(dirname "${'$'}GDK_QUERY")/2.10.0/loaders.cache"
                 fi
                 test -s /usr/share/glib-2.0/schemas/org.gnome.settings-daemon.peripherals.gschema.xml
                 test -x /usr/bin/kgx
@@ -168,7 +168,7 @@ class RootfsManager(private val context: Context) {
             """
                 set -e
                 SVG_LOADER="$(find /usr/lib -type f -name libpixbufloader-svg.so -print -quit)"
-                test -n "$SVG_LOADER"
+                test -n "${'$'}SVG_LOADER"
                 glib-compile-schemas /usr/share/glib-2.0/schemas
                 gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
                 gtk-update-icon-cache -f -t /usr/share/icons/Adwaita 2>/dev/null || true
