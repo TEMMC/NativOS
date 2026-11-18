@@ -79,7 +79,7 @@ jobs:
           scripts/prepare-mt-os-rootfs.sh \
             "$RUNNER_TEMP/mt-os-rootfs" \
             "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz"
-          sha256sum --check "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum --check mt-os-rootfs-arm64.tgz.sha256)
           ls -lh "$RUNNER_TEMP"/mt-os-rootfs-arm64.tgz*
           tar -tzf "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz" | grep -E '(^|/)usr/bin/(phoc|phosh|kgx)$|usr/share/mt-os/rootfs-packages.txt'
           ROOTFS_SHA256="$(awk '{print $1}' "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz.sha256")"
