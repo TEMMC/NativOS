@@ -130,7 +130,7 @@ class RootfsManager(private val context: Context) {
             connection.requestMethod = "GET"
 
             val response = connection.responseCode
-            if (response == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
+            if (response == 416) {
                 connection.disconnect()
                 connection = null
                 return finalizeArchive()
