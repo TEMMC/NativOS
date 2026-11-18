@@ -1,4 +1,4 @@
-name: MT-OS Android build (source unchanged)
+name: MT-OS Android build (small APK + separate Debian rootfs)
 
 on:
   push:
@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mt-os-android-build-${{ github.ref }}
@@ -78,11 +78,15 @@ jobs:
           chmod +x scripts/prepare-mt-os-rootfs.sh scripts/build-rootfs-asset.sh
           scripts/prepare-mt-os-rootfs.sh \
             "$RUNNER_TEMP/mt-os-rootfs" \
-            "$GITHUB_WORKSPACE/android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz"
-          cd android/app/src/main/assets/rootfs
-          sha256sum --check mt-os-rootfs-arm64.tgz.sha256
-          ls -lh mt-os-rootfs-arm64.tgz*
-          tar -tzf mt-os-rootfs-arm64.tgz | grep -E '(^|/)usr/bin/(phoc|phosh|kgx)$|usr/share/mt-os/rootfs-packages.txt'
+            "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz"
+          sha256sum --check "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz.sha256"
+          ls -lh "$RUNNER_TEMP"/mt-os-rootfs-arm64.tgz*
+          tar -tzf "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz" | grep -E '(^|/)usr/bin/(phoc|phosh|kgx)$|usr/share/mt-os/rootfs-packages.txt'
+          ROOTFS_SHA256="$(awk '{print $1}' "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz.sha256")"
+          ROOTFS_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/mt-os-rootfs-${GITHUB_SHA}/mt-os-rootfs-arm64.tgz"
+          echo "MTOS_ROOTFS_SHA256=$ROOTFS_SHA256" >> "$GITHUB_ENV"
+          echo "MTOS_ROOTFS_URL=$ROOTFS_URL" >> "$GITHUB_ENV"
+          echo "Published rootfs URL will be: $ROOTFS_URL"
 
       - name: Verify required existing app build inputs
         shell: bash
@@ -92,9 +96,13 @@ jobs:
           test -f android/gradlew
           test -f android/app/build.gradle.kts
           test -f android/app/src/main/xlorie-upstream/arm64-v8a/libXlorie.so
-          test -s android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz
-          test -s android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz.sha256
-          ls -lah android/app/src/main/assets/rootfs/
+          test -s "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz"
+          test -s "$RUNNER_TEMP/mt-os-rootfs-arm64.tgz.sha256"
+          test -n "$MTOS_ROOTFS_URL"
+          test -n "$MTOS_ROOTFS_SHA256"
+          echo "Rootfs SHA-256: $MTOS_ROOTFS_SHA256"
+          echo "Rootfs URL: $MTOS_ROOTFS_URL"
+          ls -lh "$RUNNER_TEMP"/mt-os-rootfs-arm64.tgz*
 
       - name: Build debug APK using the repository's existing source
         working-directory: android
@@ -138,15 +146,32 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
           sha256sum "$APK"
 
-      - name: Upload APK and exact rootfs used by the build
+      - name: Publish versioned Debian rootfs for first-launch download
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mt-os-rootfs-${{ github.sha }}
+          name: MT-OS Debian rootfs ${{ github.sha }}
+          body: |
+            Versioned Debian ARM64 root filesystem for MT-OS commit ${{ github.sha }}.
+            This archive is downloaded by the matching small Android APK on first setup.
+          files: |
+            ${{ runner.temp }}/mt-os-rootfs-arm64.tgz
+            ${{ runner.temp }}/mt-os-rootfs-arm64.tgz.sha256
+          draft: false
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+
+      - name: Upload debug APK and exact rootfs used by the build
         if: success()
         uses: actions/upload-artifact@v5
         with:
           name: mt-os-debug-and-rootfs-${{ github.sha }}
           path: |
             android/app/build/outputs/apk/debug/*.apk
-            android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz
-            android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz.sha256
+            ${{ runner.temp }}/mt-os-rootfs-arm64.tgz
+            ${{ runner.temp }}/mt-os-rootfs-arm64.tgz.sha256
           if-no-files-found: ignore
           retention-days: 14
 
