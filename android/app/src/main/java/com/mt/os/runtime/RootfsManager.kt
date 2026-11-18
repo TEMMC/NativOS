@@ -2,10 +2,12 @@ package com.mt.os.runtime
 
 import android.content.Context
 import android.util.Log
+import com.mt.os.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 /**
  * Manages Linux rootfs downloads, extraction, and lifecycle.
@@ -16,8 +18,7 @@ class RootfsManager(private val context: Context) {
     companion object {
         private const val TAG = "MT-OS.RootfsManager"
         private const val BUFFER_SIZE = 8192
-        private const val BUNDLED_ROOTFS_ASSET = "rootfs/mt-os-rootfs-arm64.tgz"
-        private const val BUNDLED_DISTRO = "debian"
+        private const val PRODUCTION_DISTRO = "debian"
 
         val DISTRO_URLS = mapOf(
             "ubuntu" to "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz",
@@ -49,58 +50,140 @@ class RootfsManager(private val context: Context) {
 
     fun isFlatpakInstalled(): Boolean = File(rootfsDir, "usr/bin/flatpak").exists()
 
-    /** Copy the production rootfs bundled in the signed APK into the staging area. */
-    fun stageBundledRootfs(onProgress: (progress: Double, status: String) -> Unit): Boolean {
-        val assetName = BUNDLED_ROOTFS_ASSET.substringAfterLast('/')
-        val available = runCatching {
-            context.assets.list("rootfs")?.contains(assetName) == true
-        }.getOrDefault(false)
-        if (!available) return false
+    /**
+     * Download the exact Debian image paired with this APK.
+     * A .part file is retained after network failure and resumed with HTTP Range
+     * on the next attempt. The archive is accepted only after SHA-256 verification.
+     */
+    fun downloadProductionRootfs(
+        onProgress: (progress: Double, status: String) -> Unit
+    ): Boolean {
+        val url = BuildConfig.MTOS_ROOTFS_URL
+        val expectedSha256 = BuildConfig.MTOS_ROOTFS_SHA256.lowercase()
+        if (!url.startsWith("https://") ||
+            !expectedSha256.matches(Regex("[0-9a-f]{64}"))) {
+            onProgress(-1.0, "This APK has no valid Debian download configuration.")
+            return false
+        }
 
-        return try {
-            downloadDir.mkdirs()
-            val target = File(downloadDir, "$BUNDLED_DISTRO-rootfs.tar.gz")
-            val temporary = File(downloadDir, "$BUNDLED_DISTRO-rootfs.tar.gz.part")
-            onProgress(0.0, "Preparing bundled Linux system...")
-            var copied = 0L
-            var lastReportedPercent = -1
-            val expected = runCatching {
-                context.assets.openFd(BUNDLED_ROOTFS_ASSET).use { it.length }
-            }.getOrDefault(-1L)
-            context.assets.open(BUNDLED_ROOTFS_ASSET).use { input ->
-                FileOutputStream(temporary, false).use { output ->
+        downloadDir.mkdirs()
+        val target = File(downloadDir, "$PRODUCTION_DISTRO-rootfs.tar.gz")
+        val partial = File(downloadDir, "$PRODUCTION_DISTRO-rootfs.tar.gz.part")
+
+        fun sha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(1024 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        fun finalizeArchive(): Boolean {
+            if (!partial.isFile || sha256(partial) != expectedSha256) {
+                partial.delete()
+                onProgress(-1.0, "Debian download checksum failed. Retry the download.")
+                return false
+            }
+            if (target.exists() && !target.delete()) {
+                onProgress(-1.0, "Could not replace the previous Debian archive.")
+                return false
+            }
+            if (!partial.renameTo(target)) {
+                onProgress(-1.0, "Could not finalize the Debian archive.")
+                return false
+            }
+            configFile.writeText(PRODUCTION_DISTRO)
+            onProgress(1.0, "Verified Debian system download")
+            Log.i(TAG, "Verified Debian rootfs archive (${target.length() / (1024 * 1024)} MiB)")
+            return true
+        }
+
+        if (target.isFile && sha256(target) == expectedSha256) {
+            configFile.writeText(PRODUCTION_DISTRO)
+            onProgress(1.0, "Debian system already downloaded")
+            return true
+        }
+        if (target.exists()) target.delete()
+
+        var connection: HttpURLConnection? = null
+        try {
+            val existingBytes = partial.takeIf { it.isFile }?.length() ?: 0L
+            onProgress(0.0, if (existingBytes > 0) {
+                "Resuming Debian download at ${existingBytes / (1024 * 1024)} MB..."
+            } else {
+                "Connecting to MT-OS Debian download..."
+            })
+
+            connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 30000
+            connection.readTimeout = 60000
+            connection.instanceFollowRedirects = true
+            connection.setRequestProperty("Accept-Encoding", "identity")
+            if (existingBytes > 0) {
+                connection.setRequestProperty("Range", "bytes=$existingBytes-")
+            }
+            connection.requestMethod = "GET"
+
+            val response = connection.responseCode
+            if (response == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
+                connection.disconnect()
+                connection = null
+                return finalizeArchive()
+            }
+            if (response != HttpURLConnection.HTTP_PARTIAL &&
+                response != HttpURLConnection.HTTP_OK) {
+                throw IllegalStateException("Download server returned HTTP $response")
+            }
+
+            val append = response == HttpURLConnection.HTTP_PARTIAL && existingBytes > 0
+            val startingBytes = if (append) existingBytes else 0L
+            val contentLength = connection.contentLengthLong
+            val rangeTotal = connection.getHeaderField("Content-Range")
+                ?.substringAfterLast('/')?.toLongOrNull()
+            val expectedTotal = rangeTotal ?: if (contentLength >= 0) {
+                startingBytes + contentLength
+            } else {
+                -1L
+            }
+
+            connection.inputStream.use { input ->
+                FileOutputStream(partial, append).use { output ->
                     val buffer = ByteArray(64 * 1024)
+                    var downloaded = startingBytes
+                    var lastPercent = -1
                     while (true) {
                         val count = input.read(buffer)
                         if (count < 0) break
                         output.write(buffer, 0, count)
-                        copied += count
-                        if (expected > 0) {
-                            val percent = ((copied * 100L) / expected).toInt().coerceIn(0, 100)
-                            if (percent != lastReportedPercent) {
-                                lastReportedPercent = percent
-                                onProgress(percent / 100.0, "Preparing bundled Linux system...")
+                        downloaded += count
+                        if (expectedTotal > 0) {
+                            val percent = ((downloaded * 100L) / expectedTotal).toInt().coerceIn(0, 100)
+                            if (percent != lastPercent) {
+                                lastPercent = percent
+                                onProgress(percent / 100.0,
+                                    "Downloading Debian: ${downloaded / (1024 * 1024)} / ${expectedTotal / (1024 * 1024)} MB")
                             }
+                        } else {
+                            onProgress(0.0, "Downloading Debian: ${downloaded / (1024 * 1024)} MB")
                         }
                     }
                     output.fd.sync()
                 }
             }
-            if (copied == 0L) throw IllegalStateException("Bundled rootfs is empty")
-            if (target.exists() && !target.delete()) {
-                throw IllegalStateException("Could not replace staged rootfs")
-            }
-            if (!temporary.renameTo(target)) {
-                throw IllegalStateException("Could not finalize staged rootfs")
-            }
-            configFile.writeText(BUNDLED_DISTRO)
-            onProgress(1.0, "Bundled Debian system ready")
-            Log.i(TAG, "Staged bundled rootfs (${copied / (1024 * 1024)} MiB)")
-            true
+            connection.disconnect()
+            connection = null
+            return finalizeArchive()
         } catch (error: Throwable) {
-            File(downloadDir, "$BUNDLED_DISTRO-rootfs.tar.gz.part").delete()
-            Log.e(TAG, "Could not stage bundled rootfs", error)
-            false
+            Log.e(TAG, "Debian rootfs download interrupted; partial data retained", error)
+            onProgress(-1.0, "Download interrupted. Your partial download is saved; tap to resume. ${error.message ?: ""}")
+            return false
+        } finally {
+            connection?.disconnect()
         }
     }
 
