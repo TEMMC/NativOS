@@ -52,35 +52,16 @@ val preparePatchedXlorie by tasks.registering {
     }
 }
 
-val verifyBundledRootfs by tasks.registering {
-    val rootfsDirectory = layout.projectDirectory.dir("src/main/assets/rootfs")
-    inputs.dir(rootfsDirectory)
+val mtOsRootfsUrl = providers.environmentVariable("MTOS_ROOTFS_URL").orElse("").get()
+val mtOsRootfsSha256 = providers.environmentVariable("MTOS_ROOTFS_SHA256").orElse("").get()
 
+val verifyRemoteRootfsMetadata by tasks.registering {
     doLast {
-        val asset = rootfsDirectory.file("mt-os-rootfs-arm64.tgz").asFile
-        val checksumFile = rootfsDirectory.file("mt-os-rootfs-arm64.tgz.sha256").asFile
-        check(asset.isFile && asset.length() > 100L * 1024L * 1024L) {
-            "Bundled rootfs is missing or implausibly small. Run scripts/build-rootfs-asset.sh."
+        check(mtOsRootfsUrl.startsWith("https://github.com/TEMMC/NativOS/releases/download/mt-os-rootfs-")) {
+            "MTOS_ROOTFS_URL is missing or does not point to a versioned MT-OS rootfs release."
         }
-        check(checksumFile.isFile) {
-            "Bundled rootfs checksum is missing: ${checksumFile.path}"
-        }
-        val expected = checksumFile.readText().trim().substringBefore(' ').lowercase()
-        check(expected.matches(Regex("[0-9a-f]{64}"))) {
-            "Bundled rootfs checksum file is invalid"
-        }
-        val digest = MessageDigest.getInstance("SHA-256")
-        asset.inputStream().buffered().use { input ->
-            val buffer = ByteArray(1024 * 1024)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
-        }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
-        check(actual == expected) {
-            "Bundled rootfs checksum mismatch: expected $expected, got $actual"
+        check(mtOsRootfsSha256.matches(Regex("[0-9a-fA-F]{64}"))) {
+            "MTOS_ROOTFS_SHA256 must contain the SHA-256 digest of the published Debian rootfs."
         }
     }
 }
@@ -95,6 +76,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0-alpha"
+        buildConfigField("String", "MTOS_ROOTFS_URL", "\"$mtOsRootfsUrl\"")
+        buildConfigField("String", "MTOS_ROOTFS_SHA256", "\"$mtOsRootfsSha256\"")
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -142,20 +125,15 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         viewBinding = true
         aidl = true
-    }
-
-    androidResources {
-        // The production rootfs is already gzip-compressed. Recompressing it
-        // wastes build memory and provides no meaningful size reduction.
-        noCompress += "tgz"
     }
 }
 
 tasks.named("preBuild").configure {
     dependsOn(preparePatchedXlorie)
-    dependsOn(verifyBundledRootfs)
+    dependsOn(verifyRemoteRootfsMetadata)
 }
 
 dependencies {
