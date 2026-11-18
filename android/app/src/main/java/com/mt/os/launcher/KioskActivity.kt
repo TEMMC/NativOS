@@ -638,17 +638,24 @@ class KioskActivity : Activity() {
 
             // Step 2: Download + extract rootfs if needed
             if (!rootfsManager.isRootfsReady()) {
-                // Production releases must use the Debian rootfs bundled in the APK.
-                // Never fall back to downloading a different distro during first boot.
-                val bundled = rootfsManager.stageBundledRootfs { progress, status ->
-                    updateOverlay(0.05 + progress * 0.45, status, "Offline setup — no network required")
+                // The APK stays small. Download the matching Debian image separately;
+                // partial downloads are retained and resumed when the user retries.
+                val downloaded = rootfsManager.downloadProductionRootfs { progress, status ->
+                    if (progress < 0) {
+                        bootFailed = true
+                        updateOverlay(-1.0, "Debian download needs attention", status)
+                    } else {
+                        updateOverlay(0.05 + progress * 0.45, status, "One-time download — saved for offline use")
+                    }
                 }
-                if (!bundled) {
-                    updateOverlay(
-                        -1.0,
-                        "Bundled Linux system unavailable",
-                        "This release is missing its Debian rootfs. Reinstall a complete MT-OS release."
-                    )
+                if (!downloaded) {
+                    runOnUiThread {
+                        overlayLayout?.apply {
+                            isClickable = true
+                            isFocusable = true
+                            setOnClickListener { retryAfterRootGrant() }
+                        }
+                    }
                     return
                 }
 
