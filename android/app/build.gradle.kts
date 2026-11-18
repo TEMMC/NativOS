@@ -84,6 +84,21 @@ android {
         }
     }
 
+    // Keep the original MT-OS package intact and publish MT-OS Desktop as a
+    // separately installable edition. Both editions share the exact same
+    // Phosh/Phoc runtime and native display bridge.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("standard") {
+            dimension = "edition"
+        }
+        create("desktop") {
+            dimension = "edition"
+            applicationIdSuffix = ".desktop"
+            versionNameSuffix = "-desktop"
+        }
+    }
+
     sourceSets {
         getByName("main") {
             java.srcDirs("src/main/java", "src/main/kotlin")

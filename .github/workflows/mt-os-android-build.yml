@@ -1,4 +1,4 @@
-name: MT-OS Android build (small APK + separate Debian rootfs)
+name: MT-OS and MT-OS Desktop Android builds (small APK + separate Debian rootfs)
 
 on:
   push:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   build:
-    name: Prepare Debian ARM64 rootfs and build MT-OS APK
+    name: Prepare Debian ARM64 rootfs and build both MT-OS editions
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -110,7 +110,7 @@ jobs:
         run: |
           set -euxo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace :app:assembleDebug
+          ./gradlew --no-daemon --stacktrace :app:assembleStandardDebug :app:assembleDesktopDebug
 
       - name: Prepare private Android release signing key
         if: env.MTOS_SIGNING_ENABLED == 'true'
@@ -140,11 +140,12 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          ./gradlew --no-daemon --stacktrace :app:assembleRelease
-          APK="app/build/outputs/apk/release/app-release.apk"
-          test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          sha256sum "$APK"
+          ./gradlew --no-daemon --stacktrace :app:assembleStandardRelease :app:assembleDesktopRelease
+          for APK in app/build/outputs/apk/standard/release/*.apk app/build/outputs/apk/desktop/release/*.apk; do
+            test -s "$APK"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+            sha256sum "$APK"
+          done
 
       - name: Publish versioned Debian rootfs for first-launch download
         if: success()
@@ -167,9 +168,10 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v5
         with:
-          name: mt-os-debug-and-rootfs-${{ github.sha }}
+          name: mt-os-and-desktop-debug-and-rootfs-${{ github.sha }}
           path: |
-            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/standard/debug/*.apk
+            android/app/build/outputs/apk/desktop/debug/*.apk
             ${{ runner.temp }}/mt-os-rootfs-arm64.tgz
             ${{ runner.temp }}/mt-os-rootfs-arm64.tgz.sha256
           if-no-files-found: ignore
@@ -179,8 +181,10 @@ jobs:
         if: success() && env.MTOS_SIGNING_ENABLED == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: mt-os-signed-release-${{ github.sha }}
-          path: android/app/build/outputs/apk/release/*.apk
+          name: mt-os-and-desktop-signed-release-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/standard/release/*.apk
+            android/app/build/outputs/apk/desktop/release/*.apk
           if-no-files-found: error
           retention-days: 90
 
