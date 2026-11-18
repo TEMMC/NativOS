@@ -1,21 +1,19 @@
-# Bundled MT-OS rootfs
+# MT-OS Debian rootfs release asset
 
-All builds require `mt-os-rootfs-arm64.tgz` and its matching
-`mt-os-rootfs-arm64.tgz.sha256` in this directory. Gradle fails before
-packaging if either is absent or the checksum does not match.
+The Debian ARM64 root filesystem is deliberately **not bundled inside the Android APK**.
+The Android build creates a versioned GitHub Release asset named
+`mt-os-rootfs-arm64.tgz` and embeds only its HTTPS URL and SHA-256 digest in the APK.
 
-Generate the image from a clean, fully provisioned arm64 rootfs:
+The matching MT-OS app downloads the archive on first setup, resumes interrupted
+downloads using HTTP Range, verifies SHA-256, and extracts it into the app's
+private data directory. After setup, the desktop remains available offline.
+
+The build workflow generates the archive from the prepared Debian ARM64 rootfs:
 
 ```sh
-scripts/build-rootfs-asset.sh /path/to/prepared-rootfs \
-  android/app/src/main/assets/rootfs/mt-os-rootfs-arm64.tgz
+scripts/build-rootfs-asset.sh /path/to/prepared-rootfs /path/to/mt-os-rootfs-arm64.tgz
 ```
 
-The prepared image must already contain Phosh, Phoc, GNOME Console, schemas,
-icons, and the MT-OS compatibility libraries. Do not package a user's live
-rootfs without reviewing it for accounts, tokens, history, and personal data.
-
-The script requires GNU tar (`gtar` on macOS), normalizes ownership, ordering,
-timestamps and gzip metadata, and records the exact Debian package versions in
-`/usr/share/mt-os/rootfs-packages.txt`. Set `SOURCE_DATE_EPOCH` when producing
-an official release; otherwise the documented default epoch is used.
+The prepared image must contain the MT-Phoc and MT-Phosh builds, GNOME Console,
+required schemas, icons, and MT-OS compatibility libraries. The script normalizes
+ownership, ordering, timestamps and gzip metadata and records the package set.
