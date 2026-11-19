@@ -132,9 +132,7 @@ class GnomeHomeActivity : Activity() {
             setPadding(dp(7), dp(10), dp(7), dp(10))
         }
         addDockButton(dock, "▦", "Apps") { focusSearch() }
-        addDockButton(dock, "⌘", "Terminal") {
-            startActivity(Intent(this, TerminalActivity::class.java))
-        }
+        addDockButton(dock, "⌘", "Terminal") { openTerminalWindow() }
         addDockButton(dock, "⚙", "Settings") { showAppearance() }
         addDockButton(dock, "⌂", "System") { showQuickSettings() }
         workArea.addView(dock, LinearLayout.LayoutParams(dp(66), -1))
@@ -249,6 +247,24 @@ class GnomeHomeActivity : Activity() {
                 .setClassName(info.activityInfo.packageName, info.activityInfo.name)
             try { startActivity(intent) } catch (_: Exception) { toast("Unable to launch application") }
         }
+    }
+
+    private fun openTerminalWindow() {
+        Thread {
+            val result = RootWindowBridge(this).runRoot(
+                "settings put global enable_freeform_support 1; " +
+                    "settings put global force_resizable_activities 1; " +
+                    "am start --windowingMode 5 -n com.mt.gnome/.TerminalActivity"
+            )
+            val started = result.contains("Starting:") && result.contains("exit=0") &&
+                !result.contains("Error:") && !result.contains("Exception")
+            runOnUiThread {
+                if (!started) {
+                    try { startActivity(Intent(this, TerminalActivity::class.java)) }
+                    catch (_: Exception) { toast("Could not open terminal") }
+                }
+            }
+        }.start()
     }
 
     private fun focusSearch() {
