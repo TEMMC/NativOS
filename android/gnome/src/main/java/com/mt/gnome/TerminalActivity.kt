@@ -217,7 +217,7 @@ class TerminalActivity : Activity() {
         val imagePath = d.imagePath ?: return
         if (busy) return
         busy = true; input.isEnabled = false
-        append("\\n[Finding latest ARM64 ${d.name} rootfs…]\\n")
+        append("\n[Finding latest ARM64 ${d.name} rootfs…]\n")
         Thread {
             var archive: File? = null
             var tarFile: File? = null
@@ -230,7 +230,7 @@ class TerminalActivity : Activity() {
                 val stamp = stamps.lastOrNull() ?: error("No published ARM64 build found for this distribution")
                 val buildUrl = base + stamp
                 val sums = fetchText(buildUrl + "SHA256SUMS")
-                val expected = Regex("(?im)^([0-9a-f]{64})\\\\s+\\\\*?rootfs\\\\.tar\\\\.xz\\\\s*$").find(sums)?.groupValues?.get(1)
+                val expected = Regex("(?im)^([0-9a-f]{64})\\s+\\*?rootfs\\.tar\\.xz\\s*$").find(sums)?.groupValues?.get(1)
                     ?: error("Published SHA256SUMS does not include rootfs.tar.xz")
                 archive = File(cacheDir, "${d.id}-rootfs.tar.xz")
                 tarFile = File(cacheDir, "${d.id}-rootfs.tar")
@@ -242,7 +242,7 @@ class TerminalActivity : Activity() {
                     tarFile.outputStream().buffered().use { out -> xz.copyTo(out) }
                 }
                 val a = tarFile.absolutePath
-                val script = "set -e; rm -rf '$staging'; mkdir -p '$staging'; tar -xpf '$a' -C '$staging'; test -x '$staging/bin/sh'; mkdir -p '$staging/dev' '$staging/proc' '$staging/sys' '$staging/run'; if [ -e '$staging/etc/resolv.conf' ]; then rm -f '$staging/etc/resolv.conf'; fi; printf '%s\\\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$staging/etc/resolv.conf'; rm -rf '$target'; mv '$staging' '$target'; test -x '$target/bin/sh'"
+                val script = "set -e; rm -rf '$staging'; mkdir -p '$staging'; tar -xpf '$a' -C '$staging'; test -x '$staging/bin/sh'; mkdir -p '$staging/dev' '$staging/proc' '$staging/sys' '$staging/run'; if [ -e '$staging/etc/resolv.conf' ]; then rm -f '$staging/etc/resolv.conf'; fi; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$staging/etc/resolv.conf'; rm -rf '$target'; mv '$staging' '$target'; test -x '$target/bin/sh'"
                 val result = rootExec(script)
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
                 runOnUiThread {
