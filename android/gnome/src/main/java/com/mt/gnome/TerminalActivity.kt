@@ -345,6 +345,7 @@ class TerminalActivity : Activity() {
     }
 
     private fun select(id: String) {
+        closePty(true)
         active = id; prefs.edit().putString("active_distro", id).apply()
         append("\n[Switched to ${name(id)}]\n"); runLinux("cat /etc/os-release; id")
     }
@@ -434,7 +435,7 @@ class TerminalActivity : Activity() {
         Thread {
             try {
                 val r = root(id)
-                val shell = "set -e; R='$r'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color; export COLORTERM=truecolor; export HOME=/root; chroot \"\$R\" /bin/sh -i; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
+                val shell = "R='$r'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color; export COLORTERM=truecolor; export HOME=/root; chroot \"\$R\" /bin/sh -i; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
                 val packed = nativeOpenPty(shell, 100, 30)
                 val fd = packed.toInt()
                 val pid = (packed ushr 32).toInt()
@@ -508,7 +509,7 @@ class TerminalActivity : Activity() {
         text = text.replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "")
         text = text.replace(Regex("\u001B\\([B0]"), "")
         return text.replace("\r\n", "\n").replace('\r', '\n')
-            .filter { it == '\n' || it == '\t' || it == '\b' || it >= ' ' }
+            .filter { it == '\n' || it == '\t' || it >= ' ' }
     }
 
     private fun closePty(kill: Boolean = true) {
@@ -524,7 +525,7 @@ class TerminalActivity : Activity() {
             ptyFd = -1
             ptyPid = -1
         }
-        if (kill && pid > 0) nativeClosePty(fd, pid)
+        if (pid > 0) nativeClosePty(fd, pid)
     }
 
     override fun onDestroy() {
