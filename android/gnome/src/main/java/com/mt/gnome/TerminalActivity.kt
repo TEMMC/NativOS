@@ -226,7 +226,7 @@ class TerminalActivity : Activity() {
             try {
                 val base = "https://images.linuxcontainers.org/images/$imagePath/"
                 val listing = fetchText(base)
-                val stamps = Regex("href=[\\\"'](20[0-9]{6}_[0-9]{2}:[0-9]{2}/)[\\\"']").findAll(listing).map { it.groupValues[1] }.toList().sorted()
+                val stamps = Regex("href=[\\\"'](20[0-9]{6}_[0-9]{2}(?::|%3A)[0-9]{2}/)[\\\"']").findAll(listing).map { it.groupValues[1] }.toList().sorted()
                 val stamp = stamps.lastOrNull() ?: error("No published ARM64 build found for this distribution")
                 val buildUrl = base + stamp
                 val sums = fetchText(buildUrl + "SHA256SUMS")
