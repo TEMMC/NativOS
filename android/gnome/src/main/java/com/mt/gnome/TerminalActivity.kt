@@ -236,9 +236,9 @@ class TerminalActivity : Activity() {
                 archive = File(cacheDir, "${d.id}-rootfs.tar.xz")
                 tarFile = File(cacheDir, "${d.id}-rootfs.tar")
                 download(buildUrl + "rootfs.tar.xz", archive)
-                runOnUiThread { append("[Verifying published SHA-256…]\\n") }
+                runOnUiThread { append("[Verifying published SHA-256…]\n") }
                 if (!sha256(archive).equals(expected, true)) throw SecurityException("SHA-256 mismatch; archive rejected")
-                runOnUiThread { append("[Checksum verified. Decompressing rootfs…]\\n") }
+                runOnUiThread { append("[Checksum verified. Decompressing rootfs…]\n") }
                 XZInputStream(archive.inputStream().buffered()).use { xz ->
                     tarFile.outputStream().buffered().use { out -> xz.copyTo(out) }
                 }
@@ -248,12 +248,12 @@ class TerminalActivity : Activity() {
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
                 runOnUiThread {
                     active = d.id; prefs.edit().putString("active_distro", d.id).apply()
-                    append("[${d.name} installed. Opening terminal…]\\n")
+                    append("[${d.name} installed. Opening terminal…]\n")
                     busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
                 }
             } catch (e: Exception) {
                 rootExec("rm -rf '$staging'")
-                runOnUiThread { append("[Installation failed] ${e.message}\\n"); append("No distro was selected. Retry from DISTROS.\\n"); busy = false; input.isEnabled = true }
+                runOnUiThread { append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
             } finally { archive?.delete(); tarFile?.delete() }
         }.start()
     }
