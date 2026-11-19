@@ -214,10 +214,10 @@ class TerminalActivity : Activity() {
                 }
                 val code = process.waitFor()
                 runOnUiThread {
-                    append("[process exited: $code]\\n")
+                    append("[process exited: $code]\n")
                     if (code == 0 && pendingDesktop != null) {
                         prefs.edit().putString("selected_desktop", pendingDesktop).apply()
-                        append("[" + pendingDesktop + " installation completed successfully]\\n")
+                        append("[" + pendingDesktop + " installation completed successfully]\n")
                     }
                     pendingDesktop = null
                 }
