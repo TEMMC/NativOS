@@ -152,6 +152,7 @@ class TerminalActivity : Activity() {
             setLineSpacing(dp(2).toFloat(), 1.04f)
         }
         scroll.addView(output)
+        scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
         val prompt = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -431,7 +432,7 @@ class TerminalActivity : Activity() {
         }
         busy = true
         input.isEnabled = false
-        append("[Starting persistent root PTY shell in \${name(id)}…]\n")
+        append("[Starting persistent root PTY shell in ${name(id)}…]\n")
         Thread {
             try {
                 val r = root(id)
@@ -475,21 +476,27 @@ class TerminalActivity : Activity() {
                     input.requestFocus()
                     append("[PTY connected. This shell stays open between commands.]\n")
                     sendPty(command + "\n")
-                    scroll.post {
-                        val charWidth = (output.textSize * 0.62f).coerceAtLeast(1f)
-                        val lineHeight = (output.textSize * 1.45f).coerceAtLeast(1f)
-                        nativeResizePty(ptyFd, (scroll.width / charWidth).toInt().coerceIn(20, 240),
-                            (scroll.height / lineHeight).toInt().coerceIn(5, 100))
-                    }
+                    scroll.post { resizePty() }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    append("[PTY startup failed] \${e.message}\n")
+                    append("[PTY startup failed] ${e.message}\n")
                     busy = false
                     input.isEnabled = true
                 }
             }
         }.start()
+    }
+
+    private fun resizePty() {
+        val fd = ptyFd
+        if (fd < 0 || scroll.width <= 0 || scroll.height <= 0) return
+        val charWidth = (output.textSize * 0.62f).coerceAtLeast(1f)
+        val lineHeight = (output.textSize * 1.45f).coerceAtLeast(1f)
+        try {
+            nativeResizePty(fd, (scroll.width / charWidth).toInt().coerceIn(20, 240),
+                (scroll.height / lineHeight).toInt().coerceIn(5, 100))
+        } catch (_: Exception) {}
     }
 
     private fun sendPty(text: String) {
