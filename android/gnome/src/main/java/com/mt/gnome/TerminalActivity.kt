@@ -454,6 +454,7 @@ class TerminalActivity : Activity() {
         if (cmd.isEmpty()) return
         input.text.clear()
         commandHistory.add(cmd); historyIndex = commandHistory.size
+        if (cmd.trim() == "clear") { clearActiveTerminal(); sendPty("clear\n"); return }
         sendPty(cmd + "\n")
     }
 
@@ -651,22 +652,6 @@ class TerminalActivity : Activity() {
         text = text.replace(Regex("\u001B\\([B0]"), "")
         return text.replace("\r\n", "\n").replace('\r', '\n')
             .filter { it == '\n' || it == '\t' || it >= ' ' }
-    }
-
-    private fun closePty(kill: Boolean = true) {
-        val fd: Int
-        val pid: Int
-        synchronized(ptyLock) {
-            fd = ptyFd
-            pid = ptyPid
-            try { ptyDescriptor?.close() } catch (_: Exception) {}
-            ptyDescriptor = null
-            ptyInput = null
-            ptyOutput = null
-            ptyFd = -1
-            ptyPid = -1
-        }
-        if (pid > 0) nativeClosePty(fd, pid)
     }
 
     override fun onDestroy() {
