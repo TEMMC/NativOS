@@ -660,8 +660,7 @@ class TerminalActivity : Activity() {
     }
 
     private fun rootExec(script: String): Pair<Int, String> {
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", script))
-        p.redirectErrorStream(true)
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "exec 2>&1; $script"))
         val out = StringBuilder()
         BufferedReader(InputStreamReader(p.inputStream)).use { r -> var line: String?; while (r.readLine().also { line = it } != null) out.append(line).append('\n') }
         return Pair(p.waitFor(), out.toString())
