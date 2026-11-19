@@ -420,7 +420,9 @@ class GnomeHomeActivity : Activity() {
         if (!::resolution.isInitialized) return
         val size = Point()
         windowManager.defaultDisplay.getRealSize(size)
-        resolution.text = "${size.x} × ${size.y}  ⚙"\n        resolution.contentDescription = "Current logical resolution. Tap to change."\n        resolution.setOnClickListener { showResolutionSettings() }
+        resolution.text = "${size.x} × ${size.y}  ⚙"
+        resolution.contentDescription = "Current logical resolution. Tap to change."
+        resolution.setOnClickListener { showResolutionSettings() }
     }
 
     private fun updateClock() { if (::clock.isInitialized) clock.text = now() }
