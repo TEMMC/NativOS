@@ -13,6 +13,7 @@ val signingProps = Properties().apply {
 android {
     namespace = "com.mt.gnome"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"
     defaultConfig {
         applicationId = "com.mt.gnome"
         minSdk = 26
