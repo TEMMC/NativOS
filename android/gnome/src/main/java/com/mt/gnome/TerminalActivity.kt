@@ -302,14 +302,14 @@ class TerminalActivity : Activity() {
     }
 
     private fun fetchText(address: String): String {
-        val c = (URL(address).openConnection() as HttpURLConnection).apply { connectTimeout = 20000; readTimeout = 30000; instanceFollowRedirects = true }
+        val c = (URL(address).openConnection() as HttpURLConnection).apply { connectTimeout = 45000; readTimeout = 90000; instanceFollowRedirects = true }
         try { if (c.responseCode !in 200..299) error("Checksum server HTTP ${c.responseCode}"); return c.inputStream.bufferedReader().use { it.readText() } }
         finally { c.disconnect() }
     }
 
     private fun download(address: String, file: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
         val c = (URL(address).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20000; readTimeout = 60000; instanceFollowRedirects = true
+            connectTimeout = 45000; readTimeout = 120000; instanceFollowRedirects = true
         }
         try {
             if (c.responseCode !in 200..299) error("Download server HTTP ${c.responseCode}")
@@ -427,7 +427,7 @@ class TerminalActivity : Activity() {
                 }
                 runOnUiThread { updateInstallPhase("Extracting and preparing Linux filesystem…") }
                 val a = tarOutput.absolutePath
-                val script = "set -e; rm -rf '$staging'; mkdir -p '$staging'; tar -xpf '$a' -C '$staging'; test -x '$staging/bin/sh'; mkdir -p '$staging/dev' '$staging/proc' '$staging/sys' '$staging/run'; if [ -e '$staging/etc/resolv.conf' ]; then rm -f '$staging/etc/resolv.conf'; fi; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$staging/etc/resolv.conf'; backup=\$target.previous; rm -rf \$backup; if [ -e \$target ]; then mv \$target \$backup; fi; if mv '$staging' '$target'; then rm -rf \$backup; else [ ! -e \$backup ] || mv \$backup \$target; exit 1; fi; test -x \$target/bin/sh && test -f \$target/etc/os-release && test -d \$target/usr/bin && test -d \$target/var; printf '%s\\n' '${d.id}' > \$target/.mt-installed"
+                val script = "set -e; TARGET='$target'; STAGING='$staging'; BACKUP=\"\\${TARGET}.previous\"; mkdir -p \"\\${TARGET%/*}\"; rm -rf \"\\$STAGING\" \"\\$BACKUP\"; mkdir -p \"\\$STAGING\"; tar -xpf '$a' -C \"\\$STAGING\"; test -x \"\\$STAGING/bin/sh\"; mkdir -p \"\\$STAGING/dev\" \"\\$STAGING/proc\" \"\\$STAGING/sys\" \"\\$STAGING/run\"; if [ -e \"\\$STAGING/etc/resolv.conf\" ]; then rm -f \"\\$STAGING/etc/resolv.conf\"; fi; printf '%s\\\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > \"\\$STAGING/etc/resolv.conf\"; if [ -e \"\\$TARGET\" ]; then mv \"\\$TARGET\" \"\\$BACKUP\"; fi; if mv \"\\$STAGING\" \"\\$TARGET\"; then rm -rf \"\\$BACKUP\"; else [ ! -e \"\\$BACKUP\" ] || mv \"\\$BACKUP\" \"\\$TARGET\"; exit 1; fi; test -x \"\\$TARGET/bin/sh\" && test -f \"\\$TARGET/etc/os-release\" && test -d \"\\$TARGET/usr/bin\" && test -d \"\\$TARGET/var\"; printf '%s\\\\n' '${d.id}' > \"\\$TARGET/.mt-installed\""
                 val result = rootExec(script)
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
                 runOnUiThread {
@@ -661,6 +661,7 @@ class TerminalActivity : Activity() {
 
     private fun rootExec(script: String): Pair<Int, String> {
         val p = Runtime.getRuntime().exec(arrayOf("su", "-c", script))
+        p.redirectErrorStream(true)
         val out = StringBuilder()
         BufferedReader(InputStreamReader(p.inputStream)).use { r -> var line: String?; while (r.readLine().also { line = it } != null) out.append(line).append('\n') }
         return Pair(p.waitFor(), out.toString())
