@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -20,6 +21,8 @@ import android.widget.TextView
 import android.widget.Toast
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -41,6 +44,18 @@ class TerminalActivity : Activity() {
     private var installProgress: ProgressDialog? = null
     private val commandHistory = mutableListOf<String>()
     private var historyIndex = 0
+    private var ptyDescriptor: ParcelFileDescriptor? = null
+    private var ptyInput: FileInputStream? = null
+    private var ptyOutput: FileOutputStream? = null
+    private var ptyFd = -1
+    private var ptyPid = -1
+    private var ptyReader: Thread? = null
+    private val ptyLock = Any()
+
+    companion object { init { System.loadLibrary("mtpty") } }
+    private external fun nativeOpenPty(command: String, columns: Int, rows: Int): Long
+    private external fun nativeResizePty(fd: Int, columns: Int, rows: Int)
+    private external fun nativeClosePty(fd: Int, pid: Int)
 
     private data class Distro(val id: String, val name: String, val summary: String, val manager: String, val imagePath: String? = null)
     private val distros = listOf(
@@ -112,7 +127,9 @@ class TerminalActivity : Activity() {
         }
         toolbar.addView(btn("Distros") { showCatalogue() })
         toolbar.addView(btn("Clear") { output.text = "" })
-        toolbar.addView(btn("Help") { append("\nCommands: help, clear, exit. Install tools with your distro package manager.\n") })
+        toolbar.addView(btn("Help") { append("\nPersistent shell: cd, export, package managers and foreground processes share one session. Ctrl+C interrupts.\n") })
+        toolbar.addView(btn("Ctrl+C") { sendPty("\u0003") })
+        toolbar.addView(btn("Tab") { sendPty("\t") })
         base.addView(toolbar)
         base.addView(TextView(this).apply {
             text = "LINUX SHELL  •  ARM64"
@@ -398,26 +415,121 @@ class TerminalActivity : Activity() {
         if (busy) return
         val cmd = input.text.toString().trim()
         if (cmd.isEmpty()) return
-        input.text.clear(); commandHistory.add(cmd); historyIndex = commandHistory.size; append("\n\$ $cmd\n")
-        if (cmd == "help") { append("Run commands inside the selected minimal Linux distribution. Alpine: apk update, apk add <package>. Common: pwd, ls, uname -a, df -h, free -h, whoami, exit. No desktop installer.\n"); return }
-        if (cmd == "clear") { output.text = ""; return }
-        if (cmd == "exit") { finish(); return }
-        runLinux(cmd)
+        input.text.clear(); commandHistory.add(cmd); historyIndex = commandHistory.size
+        if (cmd == "clear") { output.text = ""; sendPty("clear\n"); return }
+        if (cmd == "exit") { sendPty("exit\n"); return }
+        sendPty(cmd + "\n")
     }
 
     private fun runLinux(command: String) {
         val id = active ?: run { showCatalogue(); return }
-        val r = root(id); if (r.isEmpty() || busy) return
-        busy = true; input.isEnabled = false
+        if (busy) return
+        if (ptyOutput != null) {
+            sendPty(command + "\n")
+            return
+        }
+        busy = true
+        input.isEnabled = false
+        append("[Starting persistent root PTY shell in \${name(id)}…]\n")
         Thread {
             try {
-                val q = "'" + command.replace("'", "'\\''") + "'"
-                val script = "R='$r'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -lc $q 2>&1; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
-                val result = rootExec(script)
-                runOnUiThread { if (result.second.isNotBlank()) append(result.second); if (!result.second.endsWith("\n")) append("\n"); append("[process exited: ${result.first}]\n") }
-            } catch (e: Exception) { runOnUiThread { append("[terminal error] ${e.message}\n") } }
-            finally { runOnUiThread { busy = false; input.isEnabled = true; input.requestFocus() } }
+                val r = root(id)
+                val shell = "set -e; R='$r'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color; export COLORTERM=truecolor; export HOME=/root; chroot \"\$R\" /bin/sh -i; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
+                val packed = nativeOpenPty(shell, 100, 30)
+                val fd = packed.toInt()
+                val pid = (packed ushr 32).toInt()
+                if (fd < 0 || pid <= 0) error("Could not allocate a pseudo-terminal (PTY)")
+                val descriptor = ParcelFileDescriptor.adoptFd(fd)
+                synchronized(ptyLock) {
+                    ptyDescriptor = descriptor
+                    ptyFd = fd
+                    ptyPid = pid
+                    ptyInput = FileInputStream(descriptor.fileDescriptor)
+                    ptyOutput = FileOutputStream(descriptor.fileDescriptor)
+                }
+                val reader = Thread {
+                    val buffer = CharArray(4096)
+                    try {
+                        val stream = synchronized(ptyLock) { ptyInput } ?: return@Thread
+                        val decoder = InputStreamReader(stream, Charsets.UTF_8)
+                        while (true) {
+                            val count = decoder.read(buffer)
+                            if (count < 0) break
+                            val clean = cleanTerminalText(String(buffer, 0, count))
+                            if (clean.isNotEmpty()) runOnUiThread { if (!isFinishing) append(clean) }
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        runOnUiThread {
+                            if (!isFinishing) append("\n[Linux shell session ended]\n")
+                            closePty(false)
+                        }
+                    }
+                }
+                ptyReader = reader
+                reader.start()
+                runOnUiThread {
+                    busy = false
+                    input.isEnabled = true
+                    input.requestFocus()
+                    append("[PTY connected. This shell stays open between commands.]\n")
+                    sendPty(command + "\n")
+                    scroll.post {
+                        val charWidth = (output.textSize * 0.62f).coerceAtLeast(1f)
+                        val lineHeight = (output.textSize * 1.45f).coerceAtLeast(1f)
+                        nativeResizePty(ptyFd, (scroll.width / charWidth).toInt().coerceIn(20, 240),
+                            (scroll.height / lineHeight).toInt().coerceIn(5, 100))
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    append("[PTY startup failed] \${e.message}\n")
+                    busy = false
+                    input.isEnabled = true
+                }
+            }
         }.start()
+    }
+
+    private fun sendPty(text: String) {
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        try {
+            synchronized(ptyLock) {
+                ptyOutput?.write(bytes)
+                ptyOutput?.flush()
+            }
+        } catch (e: Exception) {
+            append("[PTY input error] \${e.message}\n")
+        }
+    }
+
+    private fun cleanTerminalText(value: String): String {
+        var text = value.replace(Regex("\u001B\\][^\u0007]*(?:\u0007|\u001B\\\\)"), "")
+        text = text.replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "")
+        text = text.replace(Regex("\u001B\\([B0]"), "")
+        return text.replace("\r\n", "\n").replace('\r', '\n')
+            .filter { it == '\n' || it == '\t' || it == '\b' || it >= ' ' }
+    }
+
+    private fun closePty(kill: Boolean = true) {
+        val fd: Int
+        val pid: Int
+        synchronized(ptyLock) {
+            fd = ptyFd
+            pid = ptyPid
+            try { ptyDescriptor?.close() } catch (_: Exception) {}
+            ptyDescriptor = null
+            ptyInput = null
+            ptyOutput = null
+            ptyFd = -1
+            ptyPid = -1
+        }
+        if (kill && pid > 0) nativeClosePty(fd, pid)
+    }
+
+    override fun onDestroy() {
+        closePty(true)
+        super.onDestroy()
     }
 
     private fun rootExec(script: String): Pair<Int, String> {
