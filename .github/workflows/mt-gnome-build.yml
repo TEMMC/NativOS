@@ -29,11 +29,28 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Install Android SDK packages
         run: |
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null
           sdkmanager "platform-tools" "ndk;27.2.12479018" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
+      - name: Download five real nature wallpapers
+        run: |
+          set -euo pipefail
+          DIR=android/gnome/src/main/assets/wallpapers
+          mkdir -p "$DIR"
+          curl -fL --retry 3 --connect-timeout 20 -o "$DIR/mountain_lake.jpg" "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1600&q=82&fit=crop"
+          curl -fL --retry 3 --connect-timeout 20 -o "$DIR/forest.jpg" "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1600&q=82&fit=crop"
+          curl -fL --retry 3 --connect-timeout 20 -o "$DIR/mountain_peaks.jpg" "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1600&q=82&fit=crop"
+          curl -fL --retry 3 --connect-timeout 20 -o "$DIR/tropical_beach.jpg" "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1600&q=82&fit=crop"
+          curl -fL --retry 3 --connect-timeout 20 -o "$DIR/open_landscape.jpg" "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1600&q=82&fit=crop"
+          for image in "$DIR"/*.jpg; do
+            test -s "$image"
+            test "$(stat -c%s "$image")" -gt 20000
+            file "$image"
+          done
       - name: Prepare existing NativOS release signing key
         if: env.SIGNING_ENABLED == 'true'
         working-directory: android
