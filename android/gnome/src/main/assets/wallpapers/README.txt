@@ -1,0 +1,1 @@
+MT-GNOME bundled offline nature wallpaper assets are downloaded during the GitHub Actions build from Unsplash image CDN URLs. The build validates each downloaded JPEG before Gradle packages it into the APK. Wallpaper choices: Mountain Lake, Forest, Mountain Peaks, Tropical Beach, Open Landscape.
