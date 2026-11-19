@@ -2,12 +2,12 @@ package com.mt.gnome
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.Context
-import android.content.pm.ActivityInfo
-import android.content.res.Configuration
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.ResolveInfo
+import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Point
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -15,10 +15,9 @@ import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
-import android.view.inputmethod.InputMethodManager
+import android.view.View
 import android.widget.EditText
 import android.widget.GridLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -30,11 +29,12 @@ import java.util.Locale
 
 class GnomeHomeActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("mt_gnome", MODE_PRIVATE) }
-    private val muted = Color.rgb(153, 165, 190)
+    private val muted = Color.rgb(174, 180, 199)
     private lateinit var desktop: LinearLayout
     private lateinit var appGrid: GridLayout
     private lateinit var search: EditText
     private lateinit var clock: TextView
+    private lateinit var resolution: TextView
     private lateinit var rootStatus: TextView
     private var apps: List<ResolveInfo> = emptyList()
     private var themeName = "Aurora"
@@ -43,8 +43,9 @@ class GnomeHomeActivity : Activity() {
         super.onCreate(savedInstanceState)
         themeName = prefs.getString("theme", "Aurora") ?: "Aurora"
         applyOrientationPreference()
-        window.statusBarColor = Color.rgb(12, 16, 31)
-        window.navigationBarColor = Color.rgb(12, 16, 31)
+        window.statusBarColor = Color.rgb(30, 30, 36)
+        window.navigationBarColor = Color.rgb(30, 30, 36)
+        enterDesktopMode()
         buildDesktop()
         loadApps()
         updateRootStatus()
@@ -52,115 +53,138 @@ class GnomeHomeActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        enterDesktopMode()
         if (::clock.isInitialized) updateClock()
+        if (::resolution.isInitialized) updateResolution()
         if (::rootStatus.isInitialized) updateRootStatus()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enterDesktopMode()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun enterDesktopMode() {
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        )
+    }
+
     private fun palette(): IntArray = when (themeName) {
-        "Emerald" -> intArrayOf(Color.rgb(7, 65, 67), Color.rgb(13, 35, 54), Color.rgb(12, 16, 31))
-        "Midnight" -> intArrayOf(Color.rgb(38, 49, 83), Color.rgb(22, 30, 55), Color.rgb(12, 16, 31))
-        else -> intArrayOf(Color.rgb(55, 39, 112), Color.rgb(28, 39, 78), Color.rgb(12, 16, 31))
+        "Emerald" -> intArrayOf(Color.rgb(12, 78, 74), Color.rgb(17, 48, 63), Color.rgb(18, 25, 40))
+        "Midnight" -> intArrayOf(Color.rgb(49, 57, 91), Color.rgb(28, 35, 61), Color.rgb(17, 21, 37))
+        else -> intArrayOf(Color.rgb(74, 55, 132), Color.rgb(39, 49, 91), Color.rgb(17, 21, 37))
     }
 
     private fun buildDesktop() {
         desktop = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(12), dp(18), dp(12))
+            setPadding(dp(10), dp(7), dp(10), dp(8))
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR, palette())
         }
 
+        // GNOME-style top bar
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = panel()
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = rounded(Color.rgb(30, 30, 36), 12)
+            setPadding(dp(13), 0, dp(12), 0)
         }
-        val mark = TextView(this).apply {
-            text = "M"
-            textSize = 17f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(151, 112, 255), Color.rgb(67, 151, 245))).apply {
-                cornerRadius = dp(12).toFloat()
-            }
-        }
-        top.addView(mark, LinearLayout.LayoutParams(dp(36), dp(36)))
-        val brand = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), 0, 0, 0)
-        }
-        brand.addView(label("MT-OS", 14, Color.WHITE, true))
-        brand.addView(label("DESKTOP ENVIRONMENT", 8, muted, true))
-        top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        clock = label(now(), 11, Color.WHITE, true).apply { gravity = Gravity.CENTER }
+        top.addView(label("Activities", 12, Color.WHITE, true).apply {
+            setPadding(0, 0, dp(18), 0)
+            setOnClickListener { focusSearch() }
+        })
+        top.addView(label("MT", 12, Color.rgb(194, 176, 255), true))
+        top.addView(label("  Desktop", 12, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        clock = label(now(), 12, Color.WHITE, true).apply { gravity = Gravity.CENTER }
         top.addView(clock)
-        top.addView(label("⋮", 23, Color.WHITE, true).apply {
+        top.addView(label("  ▾", 17, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), 0, 0, 0)
             setOnClickListener { showQuickSettings() }
-        }, LinearLayout.LayoutParams(dp(28), dp(36)))
-        desktop.addView(top, LinearLayout.LayoutParams(-1, dp(56)))
-
-        val hero = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(3), dp(23), dp(3), dp(16))
-        }
-        hero.addView(label("YOUR PERSONAL WORKSPACE", 10, muted, true))
-        hero.addView(label("Everything in its place.", 26, Color.WHITE, true).apply {
-            setPadding(0, dp(4), 0, dp(3))
         })
-        hero.addView(label("Launch applications, manage windows and make it yours.", 11, muted))
-        desktop.addView(hero)
+        desktop.addView(top, LinearLayout.LayoutParams(-1, dp(38)))
+
+        val workArea = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(9), 0, 0)
+        }
+
+        // GNOME dash / dock
+        val dock = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            background = rounded(Color.argb(220, 29, 30, 42), 18)
+            setPadding(dp(7), dp(10), dp(7), dp(10))
+        }
+        addDockButton(dock, "▦", "Apps") { focusSearch() }
+        addDockButton(dock, "⚙", "Settings") { showAppearance() }
+        addDockButton(dock, "⌂", "System") { showQuickSettings() }
+        workArea.addView(dock, LinearLayout.LayoutParams(dp(66), -1))
+
+        val workspace = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(2), dp(3), 0)
+        }
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        heading.addView(label("Applications", 19, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        resolution = label("", 10, muted, true).apply { gravity = Gravity.CENTER_VERTICAL }
+        heading.addView(resolution)
+        workspace.addView(heading, LinearLayout.LayoutParams(-1, dp(32)))
+        workspace.addView(label("Your desktop workspace", 10, muted).apply {
+            setPadding(0, dp(1), 0, dp(8))
+        })
 
         search = EditText(this).apply {
-            hint = "Search applications"
-            textSize = 14f
+            hint = "  Search apps…"
+            textSize = 13f
             setSingleLine(true)
             setTextColor(Color.WHITE)
             setHintTextColor(muted)
-            setPadding(dp(16), 0, dp(16), 0)
-            background = rounded(Color.argb(225, 34, 42, 72), 15)
+            setPadding(dp(13), 0, dp(13), 0)
+            background = rounded(Color.argb(220, 37, 40, 61), 13)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderApps() }
                 override fun afterTextChanged(s: Editable?) {}
             })
         }
-        desktop.addView(search, LinearLayout.LayoutParams(-1, dp(48)))
-
-        desktop.addView(label("APPLICATIONS  ·  TAP TO OPEN IN A WINDOW", 10, muted, true).apply {
-            setPadding(dp(2), dp(17), 0, dp(8))
-        })
+        workspace.addView(search, LinearLayout.LayoutParams(-1, dp(42)))
 
         val scroll = ScrollView(this).apply {
             clipToPadding = false
-            setPadding(0, dp(8), 0, dp(6))
+            isFillViewport = true
+            setPadding(0, dp(8), 0, dp(4))
         }
-        appGrid = GridLayout(this).apply { columnCount = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 6 else 3 }
+        appGrid = GridLayout(this).apply {
+            columnCount = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 7 else 4
+            useDefaultMargins = false
+        }
         scroll.addView(appGrid)
-        desktop.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        workspace.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        val bottom = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = panel()
-            setPadding(dp(12), dp(9), dp(12), dp(8))
-        }
-        val dock = LinearLayout(this).apply {
+        val footer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), dp(4), dp(2), 0)
         }
-        addDockButton(dock, "⚙", "Desktop settings") { showAppearance() }
-        bottom.addView(dock, LinearLayout.LayoutParams(-1, dp(47)))
-        rootStatus = label("Checking system access…", 9, muted, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(7), 0, 0)
-        }
-        bottom.addView(rootStatus)
-        desktop.addView(bottom, LinearLayout.LayoutParams(-1, -2))
+        rootStatus = label("Checking root access…", 9, muted, true)
+        footer.addView(rootStatus, LinearLayout.LayoutParams(0, -2, 1f))
+        footer.addView(label("MT-OS  •  GNOME-style session", 9, muted))
+        workspace.addView(footer)
+        workArea.addView(workspace, LinearLayout.LayoutParams(0, -1, 1f))
+        desktop.addView(workArea, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(desktop)
         updateClock()
+        updateResolution()
     }
 
     private fun loadApps() {
@@ -175,44 +199,35 @@ class GnomeHomeActivity : Activity() {
         if (!::appGrid.isInitialized) return
         appGrid.removeAllViews()
         val term = if (::search.isInitialized) search.text.toString().trim() else ""
-        val results = apps.filter { info ->
-            info.loadLabel(packageManager).toString().contains(term, true)
-        }
+        val results = apps.filter { it.loadLabel(packageManager).toString().contains(term, true) }
         results.forEach { info ->
             val cell = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setPadding(dp(5), dp(11), dp(5), dp(8))
-                background = rounded(Color.argb(72, 120, 137, 196), 17)
+                setPadding(dp(5), dp(9), dp(5), dp(7))
+                background = rounded(Color.argb(55, 205, 205, 235), 14)
                 setOnClickListener { launchApp(info) }
             }
             cell.addView(ImageView(this).apply {
                 setImageDrawable(info.loadIcon(packageManager))
                 scaleType = ImageView.ScaleType.FIT_CENTER
-            }, LinearLayout.LayoutParams(dp(44), dp(44)))
+            }, LinearLayout.LayoutParams(dp(42), dp(42)))
             cell.addView(label(info.loadLabel(packageManager).toString(), 10, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
                 maxLines = 2
-                setPadding(0, dp(7), 0, 0)
-            }, LinearLayout.LayoutParams(-1, dp(34)))
+                setPadding(0, dp(6), 0, 0)
+            }, LinearLayout.LayoutParams(-1, dp(31)))
             appGrid.addView(cell, GridLayout.LayoutParams().apply {
                 width = 0
-                height = dp(104)
+                height = dp(94)
                 columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
                 setMargins(dp(4), dp(4), dp(4), dp(4))
             })
         }
         if (results.isEmpty()) {
-            val empty = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setPadding(dp(12), dp(30), dp(12), dp(30))
-                addView(label("No applications found", 14, Color.WHITE, true))
-                addView(label("Try another search or category.", 11, muted))
-            }
-            appGrid.addView(empty, GridLayout.LayoutParams().apply {
-                columnSpec = GridLayout.spec(0, appGrid.columnCount)
-            })
+            appGrid.addView(label("No applications found", 13, Color.WHITE, true).apply {
+                setPadding(dp(12), dp(22), 0, 0)
+            }, GridLayout.LayoutParams().apply { columnSpec = GridLayout.spec(0, appGrid.columnCount) })
         }
     }
 
@@ -224,50 +239,54 @@ class GnomeHomeActivity : Activity() {
         }
     }
 
+    private fun focusSearch() {
+        if (!::search.isInitialized) return
+        search.requestFocus()
+        search.post {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(search, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
     private fun showQuickSettings() {
-        val names = arrayOf("Android settings", "Wi-Fi", "Bluetooth", "Display", "Notifications")
-        AlertDialog.Builder(this).setTitle("System shortcuts")
-            .setItems(names) { _, which ->
-                val action = when (which) {
-                    1 -> Settings.ACTION_WIFI_SETTINGS
-                    2 -> Settings.ACTION_BLUETOOTH_SETTINGS
-                    3 -> Settings.ACTION_DISPLAY_SETTINGS
-                    4 -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
-                    else -> Settings.ACTION_SETTINGS
-                }
-                try { startActivity(Intent(action)) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
-            }.show()
+        val names = arrayOf("System settings", "Wi-Fi", "Bluetooth", "Display", "Notifications")
+        AlertDialog.Builder(this).setTitle("Quick settings").setItems(names) { _, which ->
+            val action = when (which) {
+                1 -> Settings.ACTION_WIFI_SETTINGS
+                2 -> Settings.ACTION_BLUETOOTH_SETTINGS
+                3 -> Settings.ACTION_DISPLAY_SETTINGS
+                4 -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+                else -> Settings.ACTION_SETTINGS
+            }
+            try { startActivity(Intent(action)) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }.show()
     }
 
     private fun showAppearance() {
-        val options = arrayOf("Aurora theme", "Emerald theme", "Midnight theme", "Screen orientation")
-        AlertDialog.Builder(this).setTitle("Desktop settings")
-            .setItems(options) { _, which ->
-                if (which == 3) showOrientationSettings() else {
-                    themeName = when (which) { 1 -> "Emerald"; 2 -> "Midnight"; else -> "Aurora" }
-                    prefs.edit().putString("theme", themeName).apply()
-                    buildDesktop()
-                    renderApps()
-                    toast("$themeName theme applied")
-                }
-            }.setNegativeButton("Close", null).show()
+        val options = arrayOf("Aurora wallpaper", "Emerald wallpaper", "Midnight wallpaper", "Screen orientation")
+        AlertDialog.Builder(this).setTitle("Desktop settings").setItems(options) { _, which ->
+            if (which == 3) showOrientationSettings() else {
+                themeName = when (which) { 1 -> "Emerald"; 2 -> "Midnight"; else -> "Aurora" }
+                prefs.edit().putString("theme", themeName).apply()
+                buildDesktop()
+                renderApps()
+                toast("$themeName desktop applied")
+            }
+        }.setNegativeButton("Close", null).show()
     }
 
     private fun showOrientationSettings() {
         val choices = arrayOf("Landscape (default)", "Follow device setting", "Portrait")
         val current = prefs.getString("orientation", "landscape") ?: "landscape"
         val selected = when (current) { "system" -> 1; "portrait" -> 2; else -> 0 }
-        AlertDialog.Builder(this)
-            .setTitle("Screen orientation")
+        AlertDialog.Builder(this).setTitle("Display orientation")
             .setSingleChoiceItems(choices, selected) { dialog, which ->
                 val value = when (which) { 1 -> "system"; 2 -> "portrait"; else -> "landscape" }
                 prefs.edit().putString("orientation", value).apply()
                 applyOrientationPreference()
                 dialog.dismiss()
                 toast(choices[which] + " selected")
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+            }.setNegativeButton("Cancel", null).show()
     }
 
     private fun applyOrientationPreference() {
@@ -282,24 +301,42 @@ class GnomeHomeActivity : Activity() {
         Thread {
             val output = RootWindowBridge(this).runRoot("id")
             runOnUiThread {
-                rootStatus.text = if (output.contains("uid=0")) "●  ROOT ACCESS AVAILABLE" else "○  ROOT ACCESS NOT AUTHORISED"
-                rootStatus.setTextColor(if (output.contains("uid=0")) Color.rgb(117, 224, 184) else muted)
+                if (::rootStatus.isInitialized) {
+                    val ok = output.contains("uid=0")
+                    rootStatus.text = if (ok) "●  ROOT ACCESS AVAILABLE" else "○  ROOT ACCESS NOT AUTHORISED"
+                    rootStatus.setTextColor(if (ok) Color.rgb(117, 224, 184) else muted)
+                }
             }
         }.start()
     }
 
+    @Suppress("DEPRECATION")
+    private fun updateResolution() {
+        if (!::resolution.isInitialized) return
+        val size = Point()
+        windowManager.defaultDisplay.getRealSize(size)
+        val w = maxOf(size.x, size.y)
+        val h = minOf(size.x, size.y)
+        resolution.text = "$w × $h"
+    }
+
     private fun updateClock() { if (::clock.isInitialized) clock.text = now() }
-    private fun now() = SimpleDateFormat("EEE, d MMM  ·  HH:mm", Locale.getDefault()).format(Date())
+    private fun now() = SimpleDateFormat("EEE  d MMM  •  HH:mm", Locale.getDefault()).format(Date())
 
     private fun addDockButton(dock: LinearLayout, glyph: String, caption: String, action: () -> Unit) {
         val item = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(8))
             setOnClickListener { action() }
+            isClickable = true
+            background = rounded(Color.argb(45, 210, 210, 255), 12)
         }
-        item.addView(label(glyph, 19, Color.WHITE, true).apply { gravity = Gravity.CENTER })
-        item.addView(label(caption, 9, muted, true).apply { gravity = Gravity.CENTER })
-        dock.addView(item, LinearLayout.LayoutParams(0, -1, 1f))
+        item.addView(label(glyph, 22, Color.WHITE, true).apply { gravity = Gravity.CENTER })
+        item.addView(label(caption, 8, muted, true).apply { gravity = Gravity.CENTER })
+        val lp = LinearLayout.LayoutParams(-1, dp(58))
+        lp.bottomMargin = dp(8)
+        dock.addView(item, lp)
     }
 
     private fun label(value: String, size: Int, color: Int, bold: Boolean = false) =
@@ -310,11 +347,10 @@ class GnomeHomeActivity : Activity() {
             if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }
 
-    private fun panel() = rounded(Color.argb(244, 13, 19, 39), 19)
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = dp(radius).toFloat()
-        setStroke(dp(1), Color.argb(45, 180, 190, 255))
+        setStroke(dp(1), Color.argb(35, 220, 220, 255))
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun toast(value: String) = Toast.makeText(this, value, Toast.LENGTH_SHORT).show()
@@ -328,9 +364,8 @@ private class RootWindowBridge(private val activity: Activity) {
                 "settings put global force_resizable_activities 1 && " +
                 "am start --windowingMode 5 -n " + shellQuote(component)
             val result = runRoot(command)
-            val launched = result.contains("Starting:") &&
-                !result.contains("Error:") && !result.contains("Exception") &&
-                result.contains("exit=0")
+            val launched = result.contains("Starting:") && !result.contains("Error:") &&
+                !result.contains("Exception") && result.contains("exit=0")
             activity.runOnUiThread {
                 if (launched) Toast.makeText(activity, "Opening in a floating window", Toast.LENGTH_SHORT).show()
                 else {
