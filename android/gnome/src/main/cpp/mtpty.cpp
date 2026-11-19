@@ -45,7 +45,7 @@ Java_com_mt_gnome_TerminalActivity_nativeOpenPty(JNIEnv *env, jobject, jstring c
         dup2(slave, STDOUT_FILENO);
         dup2(slave, STDERR_FILENO);
         if (slave > STDERR_FILENO) close(slave);
-        execl("/system/bin/su", "su", "-c", cmd, (char *)nullptr);
+        execlp("su", "su", "-c", cmd, (char *)nullptr);
         _exit(127);
     }
     close(slave);
