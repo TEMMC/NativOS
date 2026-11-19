@@ -1,6 +1,8 @@
 package com.mt.gnome
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.app.AlertDialog
 import android.app.ProgressDialog
 import android.content.pm.ActivityInfo
@@ -44,12 +46,16 @@ class TerminalActivity : Activity() {
     private var installProgress: ProgressDialog? = null
     private val commandHistory = mutableListOf<String>()
     private var historyIndex = 0
-    private var ptyDescriptor: ParcelFileDescriptor? = null
-    private var ptyInput: FileInputStream? = null
-    private var ptyOutput: FileOutputStream? = null
-    private var ptyFd = -1
-    private var ptyPid = -1
-    private var ptyReader: Thread? = null
+    private data class ShellSession(
+        val number: Int, val distroId: String, val buffer: StringBuilder = StringBuilder(),
+        var descriptor: ParcelFileDescriptor? = null, var input: FileInputStream? = null,
+        var output: FileOutputStream? = null, var fd: Int = -1, var pid: Int = -1,
+        var starting: Boolean = true
+    )
+    private val sessions = mutableListOf<ShellSession>()
+    private var activeSession: ShellSession? = null
+    private var sessionCounter = 0
+    private lateinit var sessionTabs: LinearLayout
     private val ptyLock = Any()
 
     companion object { init { System.loadLibrary("mtpty") } }
@@ -83,7 +89,7 @@ class TerminalActivity : Activity() {
         }
         buildUi()
         val id = active
-        if (id != null && exists(id)) append("Terminal ready — ${name(id)}. Type help.\n")
+        if (id != null && exists(id)) startSession(id)
         else { active = null; showCatalogue() }
     }
 
@@ -130,13 +136,18 @@ class TerminalActivity : Activity() {
             setPadding(0, dp(6), 0, dp(4))
         }
         toolbar.addView(btn("Distros") { showCatalogue() })
-        toolbar.addView(btn("Clear") { output.text = "" })
-        toolbar.addView(btn("Help") { append("\nPersistent shell: cd, export, package managers and foreground processes share one session. Ctrl+C interrupts.\n") })
+        toolbar.addView(btn("New +") { newSession() })
+        toolbar.addView(btn("Copy") { copyTerminalSelection() })
+        toolbar.addView(btn("Paste") { pasteClipboard() })
+        toolbar.addView(btn("Clear") { clearActiveTerminal() })
         toolbar.addView(btn("Ctrl+C") { sendPty("\u0003") })
         toolbar.addView(btn("Ctrl+D") { sendPty("\u0004") })
         toolbar.addView(btn("Tab") { sendPty("\t") })
         toolbar.addView(btn("Esc") { sendPty("\u001b") })
         base.addView(toolbar)
+        sessionTabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(2), 0, dp(4)) }
+        base.addView(sessionTabs, LinearLayout.LayoutParams(-1, dp(42)))
+        renderSessionTabs()
         base.addView(TextView(this).apply {
             text = "LINUX SHELL  •  ARM64"
             textSize = 10f; letterSpacing = 0.08f
@@ -151,11 +162,12 @@ class TerminalActivity : Activity() {
             setPadding(dp(13), dp(12), dp(13), dp(12))
         }
         output = TextView(this).apply {
-            text = "MT Terminal  •  ready\n"; textSize = 13f
+            text = "MT Terminal  •  select an installed distribution\n"; textSize = 13f
             typeface = Typeface.create("monospace", Typeface.NORMAL)
             setTextColor(Color.rgb(218, 228, 240))
             setTextIsSelectable(true)
             setLineSpacing(dp(2).toFloat(), 1.04f)
+            setPadding(0, dp(2), 0, dp(8))
         }
         scroll.addView(output)
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
@@ -167,7 +179,8 @@ class TerminalActivity : Activity() {
             background = rounded(Color.rgb(29, 35, 48), 9)
         }
         prompt.addView(TextView(this).apply {
-            text = "❯"; textSize = 18f; setTextColor(Color.rgb(111, 220, 170))
+            text = "~ $"; textSize = 14f; setTextColor(Color.rgb(111, 220, 170))
+            typeface = Typeface.MONOSPACE
             setPadding(dp(5), 0, dp(7), 0)
         })
         input = EditText(this).apply {
@@ -360,9 +373,9 @@ class TerminalActivity : Activity() {
     }
 
     private fun select(id: String) {
-        closePty(true)
-        active = id; prefs.edit().putString("active_distro", id).apply()
-        append("\n[Switched to ${name(id)}]\n"); runLinux("cat /etc/os-release; id")
+        active = id
+        prefs.edit().putString("active_distro", id).apply()
+        startSession(id, "cat /etc/os-release; id")
     }
 
     private fun confirmLxc(d: Distro) {
@@ -437,100 +450,199 @@ class TerminalActivity : Activity() {
 
     private fun runCommand() {
         if (busy) return
-        val cmd = input.text.toString().trim()
+        val cmd = input.text.toString()
         if (cmd.isEmpty()) return
-        input.text.clear(); commandHistory.add(cmd); historyIndex = commandHistory.size
-        if (cmd == "clear") { output.text = ""; sendPty("clear\n"); return }
-        if (cmd == "exit") { sendPty("exit\n"); return }
+        input.text.clear()
+        commandHistory.add(cmd); historyIndex = commandHistory.size
         sendPty(cmd + "\n")
     }
 
     private fun runLinux(command: String) {
         val id = active ?: run { showCatalogue(); return }
-        if (busy) return
-        if (ptyOutput != null) {
-            sendPty(command + "\n")
+        val current = activeSession
+        if (current != null && current.distroId == id && current.output != null && !current.starting) {
+            if (command.isNotBlank()) sendPty(command + "\n")
+        } else startSession(id, command)
+    }
+
+    private fun newSession() {
+        val id = active
+        if (id == null || !exists(id)) { showCatalogue(); return }
+        startSession(id)
+    }
+
+    private fun startSession(distroId: String, initialCommand: String = "") {
+        if (!exists(distroId)) {
+            append("\n[\${name(distroId)} is not installed. Choose an installed distribution first.]\n")
+            showCatalogue()
             return
         }
-        busy = true
-        input.isEnabled = false
-        append("[Starting persistent root PTY shell in ${name(id)}…]\n")
+        val session = ShellSession(++sessionCounter, distroId)
+        session.buffer.append("MT Terminal • \${name(distroId)}\n")
+        sessions.add(session); activeSession = session
+        renderSessionTabs(); output.text = session.buffer.toString()
+        busy = true; input.isEnabled = false
+        val rootPath = root(distroId)
+        appendToSession(session, "[Starting \${name(distroId)} interactive root shell…]\n")
         Thread {
             try {
-                val r = root(id)
-                val shell = "R='$r'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color; export COLORTERM=truecolor; export HOME=/root; chroot \"\$R\" /bin/sh -i; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
+                val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color COLORTERM=truecolor HOME=/root PS1='\\w $ '; chroot \"\$R\" /bin/sh -i; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
                 val packed = nativeOpenPty(shell, 100, 30)
                 val fd = packed.toInt()
                 val pid = (packed ushr 32).toInt()
                 if (fd < 0 || pid <= 0) error("Could not allocate a pseudo-terminal (PTY)")
                 val descriptor = ParcelFileDescriptor.adoptFd(fd)
                 synchronized(ptyLock) {
-                    ptyDescriptor = descriptor
-                    ptyFd = fd
-                    ptyPid = pid
-                    ptyInput = FileInputStream(descriptor.fileDescriptor)
-                    ptyOutput = FileOutputStream(descriptor.fileDescriptor)
+                    session.descriptor = descriptor; session.fd = fd; session.pid = pid
+                    session.input = FileInputStream(descriptor.fileDescriptor)
+                    session.output = FileOutputStream(descriptor.fileDescriptor)
+                    session.starting = false
                 }
                 val reader = Thread {
-                    val buffer = CharArray(4096)
+                    val chars = CharArray(4096)
                     try {
-                        val stream = synchronized(ptyLock) { ptyInput } ?: return@Thread
-                        val decoder = InputStreamReader(stream, Charsets.UTF_8)
+                        val decoder = InputStreamReader(session.input ?: return@Thread, Charsets.UTF_8)
                         while (true) {
-                            val count = decoder.read(buffer)
+                            val count = decoder.read(chars)
                             if (count < 0) break
-                            val clean = cleanTerminalText(String(buffer, 0, count))
-                            if (clean.isNotEmpty()) runOnUiThread { if (!isFinishing) append(clean) }
+                            val clean = cleanTerminalText(String(chars, 0, count))
+                            if (clean.isNotEmpty()) runOnUiThread { if (!isFinishing) appendToSession(session, clean) }
                         }
                     } catch (_: Exception) {
                     } finally {
                         runOnUiThread {
-                            if (!isFinishing) append("\n[Linux shell session ended]\n")
-                            closePty(false)
+                            appendToSession(session, "\n[Shell session ended]\n")
+                            closeSession(session); renderSessionTabs()
                         }
                     }
                 }
-                ptyReader = reader
                 reader.start()
                 runOnUiThread {
-                    busy = false
-                    input.isEnabled = true
-                    input.requestFocus()
-                    append("[PTY connected. This shell stays open between commands.]\n")
-                    sendPty(command + "\n")
-                    scroll.post { resizePty() }
+                    if (activeSession === session) {
+                        busy = false; input.isEnabled = true; input.requestFocus()
+                        if (initialCommand.isNotBlank()) sendSession(session, initialCommand + "\n")
+                        scroll.post { resizePty() }
+                    }
+                    renderSessionTabs()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    append("[PTY startup failed] ${e.message}\n")
-                    busy = false
-                    input.isEnabled = true
+                    appendToSession(session, "[PTY startup failed] \${e.message}\n")
+                    session.starting = false
+                    if (activeSession === session) { busy = false; input.isEnabled = true }
+                    renderSessionTabs()
                 }
             }
         }.start()
     }
 
+    private fun renderSessionTabs() {
+        if (!::sessionTabs.isInitialized) return
+        sessionTabs.removeAllViews()
+        sessions.forEach { session ->
+            val selected = session === activeSession
+            val tab = btn("\${session.number} · \${name(session.distroId)}") { switchSession(session) }.apply {
+                textSize = 9f
+                setTextColor(if (selected) Color.rgb(111, 220, 170) else Color.LTGRAY)
+                background = rounded(if (selected) Color.rgb(43, 58, 62) else Color.rgb(31, 36, 49), 8)
+                setOnLongClickListener {
+                    AlertDialog.Builder(this@TerminalActivity).setTitle("Close session \${session.number}?")
+                        .setMessage("This ends processes running in this shell session.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Close") { _, _ ->
+                            closeSession(session); sessions.remove(session)
+                            if (activeSession === session) activeSession = sessions.lastOrNull()
+                            showActiveSession(); renderSessionTabs()
+                        }.show()
+                    true
+                }
+            }
+            sessionTabs.addView(tab, LinearLayout.LayoutParams(-2, dp(34)).apply { rightMargin = dp(5) })
+        }
+        sessionTabs.addView(btn("+") { newSession() }.apply {
+            textSize = 15f; setTextColor(Color.WHITE); background = rounded(Color.rgb(69, 83, 130), 8)
+        }, LinearLayout.LayoutParams(dp(38), dp(34)))
+    }
+
+    private fun switchSession(session: ShellSession) {
+        activeSession = session; active = session.distroId
+        prefs.edit().putString("active_distro", active).apply()
+        showActiveSession(); renderSessionTabs()
+    }
+
+    private fun showActiveSession() {
+        val session = activeSession
+        output.text = if (session == null) "No terminal session. Tap + to start one.\n" else session.buffer.toString()
+        busy = session?.starting ?: false
+        input.isEnabled = !busy && session?.output != null
+        scroll.post { scroll.fullScroll(View.FOCUS_DOWN); resizePty() }
+    }
+
+    private fun appendToSession(session: ShellSession, value: String) {
+        synchronized(session.buffer) { session.buffer.append(value) }
+        if (activeSession === session && ::output.isInitialized) {
+            output.append(value); scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+        }
+    }
+
+    private fun clearActiveTerminal() {
+        val session = activeSession ?: return
+        synchronized(session.buffer) { session.buffer.setLength(0) }
+        output.text = ""
+    }
+
+    private fun copyTerminalSelection() {
+        val start = output.selectionStart; val end = output.selectionEnd; val text = output.text
+        val selected = if (start >= 0 && end > start) text.subSequence(start, end).toString() else text.toString()
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("MT Terminal", selected))
+        Toast.makeText(this, if (start >= 0 && end > start) "Selection copied" else "Terminal output copied", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun pasteClipboard() {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = clipboard.primaryClip
+        if (clip == null || clip.itemCount == 0) { Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show(); return }
+        val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
+        val start = input.selectionStart.coerceAtLeast(0); val end = input.selectionEnd.coerceAtLeast(start)
+        input.text.replace(start, end, value)
+        input.setSelection((start + value.length).coerceAtMost(input.length()))
+        input.requestFocus()
+    }
+
     private fun resizePty() {
-        val fd = ptyFd
-        if (fd < 0 || scroll.width <= 0 || scroll.height <= 0) return
+        val session = activeSession ?: return
+        if (session.fd < 0 || scroll.width <= 0 || scroll.height <= 0) return
         val charWidth = (output.textSize * 0.62f).coerceAtLeast(1f)
         val lineHeight = (output.textSize * 1.45f).coerceAtLeast(1f)
-        try {
-            nativeResizePty(fd, (scroll.width / charWidth).toInt().coerceIn(20, 240),
-                (scroll.height / lineHeight).toInt().coerceIn(5, 100))
-        } catch (_: Exception) {}
+        try { nativeResizePty(session.fd, (scroll.width / charWidth).toInt().coerceIn(20, 240), (scroll.height / lineHeight).toInt().coerceIn(5, 100)) } catch (_: Exception) {}
     }
 
     private fun sendPty(text: String) {
-        val bytes = text.toByteArray(Charsets.UTF_8)
+        val session = activeSession ?: return
+        sendSession(session, text)
+    }
+
+    private fun sendSession(session: ShellSession, text: String) {
         try {
-            synchronized(ptyLock) {
-                ptyOutput?.write(bytes)
-                ptyOutput?.flush()
-            }
-        } catch (e: Exception) {
-            append("[PTY input error] \${e.message}\n")
+            synchronized(ptyLock) { session.output?.write(text.toByteArray(Charsets.UTF_8)); session.output?.flush() }
+        } catch (e: Exception) { appendToSession(session, "[PTY input error] \${e.message}\n") }
+    }
+
+    private fun closeSession(session: ShellSession) {
+        val fd: Int; val pid: Int
+        synchronized(ptyLock) {
+            fd = session.fd; pid = session.pid
+            try { session.descriptor?.close() } catch (_: Exception) {}
+            session.descriptor = null; session.input = null; session.output = null
+            session.fd = -1; session.pid = -1
         }
+        if (pid > 0) nativeClosePty(fd, pid)
+    }
+
+    private fun closeAllSessions() {
+        sessions.toList().forEach { closeSession(it) }
+        sessions.clear(); activeSession = null
     }
 
     private fun cleanTerminalText(value: String): String {
@@ -558,7 +670,7 @@ class TerminalActivity : Activity() {
     }
 
     override fun onDestroy() {
-        closePty(true)
+        closeAllSessions()
         super.onDestroy()
     }
 
@@ -569,7 +681,11 @@ class TerminalActivity : Activity() {
         return Pair(p.waitFor(), out.toString())
     }
 
-    private fun append(s: String) { output.append(s); scroll.post { scroll.fullScroll(View.FOCUS_DOWN) } }
+    private fun append(s: String) {
+        val session = activeSession
+        if (session != null) appendToSession(session, s)
+        else if (::output.isInitialized) { output.append(s); scroll.post { scroll.fullScroll(View.FOCUS_DOWN) } }
+    }
     private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
