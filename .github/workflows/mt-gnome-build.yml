@@ -53,15 +53,43 @@ jobs:
           keyPassword=$MTOS_KEY_PASSWORD
           EOF
           chmod 600 signing/keystore.properties
+      - name: Configure Gradle dependency cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - name: Build debug APK
         working-directory: android
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace :gnome:assembleDebug
+          set +e
+          for attempt in 1 2 3; do
+            echo "Debug build attempt $attempt/3"
+            if ./gradlew --no-daemon --stacktrace :gnome:assembleDebug; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Gradle dependency/build attempt failed; retrying after a short pause"
+              sleep 15
+              ./gradlew --stop || true
+            fi
+          done
+          exit 1
       - name: Build release APK with the same NativOS signing certificate
         if: env.SIGNING_ENABLED == 'true'
         working-directory: android
-        run: ./gradlew --no-daemon --stacktrace :gnome:assembleRelease
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            echo "Release build attempt $attempt/3"
+            if ./gradlew --no-daemon --stacktrace :gnome:assembleRelease; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 15
+              ./gradlew --stop || true
+            fi
+          done
+          exit 1
       - name: Verify release signature
         if: env.SIGNING_ENABLED == 'true'
         working-directory: android
