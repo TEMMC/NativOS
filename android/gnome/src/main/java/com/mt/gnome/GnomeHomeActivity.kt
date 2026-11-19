@@ -3,6 +3,7 @@ package com.mt.gnome
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.content.Intent
 import android.content.pm.ResolveInfo
 import android.graphics.Color
@@ -42,6 +43,7 @@ class GnomeHomeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         themeName = prefs.getString("theme", "Aurora") ?: "Aurora"
+        applyOrientationPreference()
         window.statusBarColor = Color.rgb(12, 16, 31)
         window.navigationBarColor = Color.rgb(12, 16, 31)
         buildDesktop()
@@ -402,8 +404,33 @@ class GnomeHomeActivity : Activity() {
                 renderApps()
                 toast("$themeName theme applied")
             }
-            .setNeutralButton("Window management") { _, _ -> showWindows() }
+            .setNeutralButton("Screen orientation") { _, _ -> showOrientationSettings() }
             .setNegativeButton("Close", null).show()
+    }
+
+    private fun showOrientationSettings() {
+        val choices = arrayOf("Follow device setting", "Portrait", "Landscape")
+        val current = prefs.getString("orientation", "system") ?: "system"
+        val selected = when (current) { "portrait" -> 1; "landscape" -> 2; else -> 0 }
+        AlertDialog.Builder(this)
+            .setTitle("Screen orientation")
+            .setSingleChoiceItems(choices, selected) { dialog, which ->
+                val value = when (which) { 1 -> "portrait"; 2 -> "landscape"; else -> "system" }
+                prefs.edit().putString("orientation", value).apply()
+                applyOrientationPreference()
+                dialog.dismiss()
+                toast(choices[which] + " selected")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun applyOrientationPreference() {
+        requestedOrientation = when (prefs.getString("orientation", "system")) {
+            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            "landscape" -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
     }
 
     private fun updateRootStatus() {
