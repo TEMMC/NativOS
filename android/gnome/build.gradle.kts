@@ -45,5 +45,6 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")\n    implementation("org.tukaani:xz:1.10")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("org.tukaani:xz:1.10")
 }
