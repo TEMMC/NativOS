@@ -29,13 +29,11 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            ndk;27.2.12479018
-            cmake;3.22.1
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "ndk;27.2.12479018" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
       - name: Prepare existing NativOS release signing key
         if: env.SIGNING_ENABLED == 'true'
         working-directory: android
