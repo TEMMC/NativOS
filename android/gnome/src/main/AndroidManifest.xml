@@ -7,7 +7,8 @@
         android:icon="@drawable/ic_mt_gnome"
         android:roundIcon="@drawable/ic_mt_gnome"
         android:theme="@style/Theme.MTGnome"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:resizeableActivity="true">
         <activity
             android:name=".GnomeHomeActivity"
             android:exported="true"
