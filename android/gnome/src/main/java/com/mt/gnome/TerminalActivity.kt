@@ -102,7 +102,7 @@ class TerminalActivity : Activity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, 0) }
         input = EditText(this).apply {
             hint = "Enter a Linux command…"; setHintTextColor(Color.GRAY); setTextColor(Color.WHITE)
-            textSize = 13f; singleLine = true; imeOptions = EditorInfo.IME_ACTION_SEND
+            textSize = 13f; setSingleLine(true); imeOptions = EditorInfo.IME_ACTION_SEND
             setPadding(dp(12), 0, dp(12), 0); background = rounded(Color.rgb(30, 38, 51), 10)
             setOnEditorActionListener { _, a, _ -> if (a == EditorInfo.IME_ACTION_SEND) { runCommand(); true } else false }
         }
