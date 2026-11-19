@@ -474,20 +474,20 @@ class TerminalActivity : Activity() {
 
     private fun startSession(distroId: String, initialCommand: String = "") {
         if (!exists(distroId)) {
-            append("\n[\${name(distroId)} is not installed. Choose an installed distribution first.]\n")
+            append("\n[${name(distroId)} is not installed. Choose an installed distribution first.]\n")
             showCatalogue()
             return
         }
         val session = ShellSession(++sessionCounter, distroId)
-        session.buffer.append("MT Terminal • \${name(distroId)}\n")
+        session.buffer.append("MT Terminal • ${name(distroId)}\n")
         sessions.add(session); activeSession = session
         renderSessionTabs(); output.text = session.buffer.toString()
         busy = true; input.isEnabled = false
         val rootPath = root(distroId)
-        appendToSession(session, "[Starting \${name(distroId)} interactive root shell…]\n")
+        appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         Thread {
             try {
-                val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color COLORTERM=truecolor HOME=/root PS1='\\w $ '; chroot \"\$R\" /bin/sh -i; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
+                val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color COLORTERM=truecolor HOME=/root PS1='~ $ '; chroot \"\$R\" /bin/sh -i; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
                 val packed = nativeOpenPty(shell, 100, 30)
                 val fd = packed.toInt()
                 val pid = (packed ushr 32).toInt()
@@ -528,7 +528,7 @@ class TerminalActivity : Activity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    appendToSession(session, "[PTY startup failed] \${e.message}\n")
+                    appendToSession(session, "[PTY startup failed] ${e.message}\n")
                     session.starting = false
                     if (activeSession === session) { busy = false; input.isEnabled = true }
                     renderSessionTabs()
@@ -542,12 +542,12 @@ class TerminalActivity : Activity() {
         sessionTabs.removeAllViews()
         sessions.forEach { session ->
             val selected = session === activeSession
-            val tab = btn("\${session.number} · \${name(session.distroId)}") { switchSession(session) }.apply {
+            val tab = btn("${session.number} · ${name(session.distroId)}") { switchSession(session) }.apply {
                 textSize = 9f
                 setTextColor(if (selected) Color.rgb(111, 220, 170) else Color.LTGRAY)
                 background = rounded(if (selected) Color.rgb(43, 58, 62) else Color.rgb(31, 36, 49), 8)
                 setOnLongClickListener {
-                    AlertDialog.Builder(this@TerminalActivity).setTitle("Close session \${session.number}?")
+                    AlertDialog.Builder(this@TerminalActivity).setTitle("Close session ${session.number}?")
                         .setMessage("This ends processes running in this shell session.")
                         .setNegativeButton("Cancel", null)
                         .setPositiveButton("Close") { _, _ ->
@@ -627,7 +627,7 @@ class TerminalActivity : Activity() {
     private fun sendSession(session: ShellSession, text: String) {
         try {
             synchronized(ptyLock) { session.output?.write(text.toByteArray(Charsets.UTF_8)); session.output?.flush() }
-        } catch (e: Exception) { appendToSession(session, "[PTY input error] \${e.message}\n") }
+        } catch (e: Exception) { appendToSession(session, "[PTY input error] ${e.message}\n") }
     }
 
     private fun closeSession(session: ShellSession) {
