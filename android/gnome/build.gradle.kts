@@ -11,14 +11,16 @@ val signingProps = Properties().apply {
 }
 
 android {
+    // Keep the Kotlin/Android namespace stable; the installed application ID
+    // is deliberately com.mtOS and is independent of this source namespace.
     namespace = "com.mt.gnome"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.mt.gnome"
+        applicationId = "com.mtOS"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1.0-alpha"
+        versionName = "1.0.0"
     }
     signingConfigs {
         if (signingFile.isFile) {
