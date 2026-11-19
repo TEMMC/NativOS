@@ -34,7 +34,7 @@ jobs:
       - name: Install Android SDK packages
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --licenses </dev/null
           sdkmanager "platform-tools" "ndk;27.2.12479018" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
       - name: Download five real nature wallpapers
         run: |
