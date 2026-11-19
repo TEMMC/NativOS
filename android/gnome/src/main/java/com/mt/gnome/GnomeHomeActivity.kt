@@ -132,6 +132,9 @@ class GnomeHomeActivity : Activity() {
             setPadding(dp(7), dp(10), dp(7), dp(10))
         }
         addDockButton(dock, "▦", "Apps") { focusSearch() }
+        addDockButton(dock, "⌘", "Terminal") {
+            startActivity(Intent(this, TerminalActivity::class.java))
+        }
         addDockButton(dock, "⚙", "Settings") { showAppearance() }
         addDockButton(dock, "⌂", "System") { showQuickSettings() }
         workArea.addView(dock, LinearLayout.LayoutParams(dp(66), -1))
