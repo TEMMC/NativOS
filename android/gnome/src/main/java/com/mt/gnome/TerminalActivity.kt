@@ -16,259 +16,244 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
 
-/**
- * MT-OS Terminal and minimal Linux distribution catalogue.
- * No desktop environment or graphical Linux package is installed here.
- */
+/** Minimal ARM64 Linux catalogue and terminal. No desktop environments are installed. */
 class TerminalActivity : Activity() {
-    private val rootfs = "/data/user/0/com.mt.os/files/rootfs"
+    private val alpineRoot = "/data/local/mt-os/distros/alpine"
+    private val ubuntuRoot = "/data/user/0/com.mt.os/files/rootfs"
+    private val alpineVersion = "3.24.4"
+    private val archiveName = "alpine-minirootfs-$alpineVersion-aarch64.tar.gz"
+    private val alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/releases/aarch64/"
     private val prefs by lazy { getSharedPreferences("mt_terminal", MODE_PRIVATE) }
     private lateinit var output: TextView
     private lateinit var input: EditText
     private lateinit var scroll: ScrollView
     private var busy = false
+    private var active: String? = null
 
-    private data class Distro(
-        val name: String,
-        val summary: String,
-        val manager: String,
-        val state: String,
-        val detail: String
-    )
-
-    // Entries are deliberately base-system/CLI-only. Availability is not implied
-    // until an official ARM64 rootfs and its checksum can be verified.
-    private val distributions = listOf(
-        Distro("Alpine Linux", "Tiny, security-oriented base system", "apk", "Catalogue", "BusyBox and musl; excellent low-footprint option."),
-        Distro("Debian", "Stable minimal ARM64 base", "apt", "Catalogue", "Install only essential packages; no desktop task."),
-        Distro("Ubuntu", "Minimal Ubuntu command-line system", "apt", "Available locally", "Uses the existing MT-OS Ubuntu rootfs. No desktop packages are added."),
-        Distro("Arch Linux ARM", "Lean rolling-release base", "pacman", "Catalogue", "Minimal base; package availability depends on ARM64 image source."),
-        Distro("Fedora", "Minimal RPM-based system", "dnf", "Catalogue", "No workstation or desktop groups."),
-        Distro("Void Linux", "Independent minimal distribution", "xbps", "Catalogue", "runit-based system with a small base."),
-        Distro("Kali Linux", "Minimal security-focused base", "apt", "Catalogue", "Base system only; no large tool collections."),
-        Distro("Manjaro ARM", "ARM-focused minimal base", "pacman", "Catalogue", "Availability depends on a maintained minimal ARM64 image."),
-        Distro("Gentoo", "Customisable minimal base", "emerge", "Catalogue", "Advanced setup; compiling packages can be demanding on this phone."),
-        Distro("openSUSE", "Minimal RPM-based base", "zypper", "Catalogue", "No graphical patterns or desktop packages."),
-        Distro("Rocky Linux", "Minimal enterprise-style base", "dnf", "Catalogue", "ARM64 rootfs availability must be verified."),
-        Distro("Buildroot", "Build-your-own tiny Linux rootfs", "custom", "Catalogue", "Embedded root filesystem builder, not a general-purpose distro installer.")
+    private data class Distro(val id: String, val name: String, val summary: String, val manager: String)
+    private val distros = listOf(
+        Distro("alpine", "Alpine Linux", "Official ultra-small aarch64 mini root filesystem", "apk"),
+        Distro("debian", "Debian Minimal", "Stable minimal command-line base", "apt"),
+        Distro("ubuntu", "Ubuntu Minimal", "Existing MT-OS Ubuntu environment", "apt"),
+        Distro("arch", "Arch Linux ARM", "Minimal rolling-release ARM64 base", "pacman"),
+        Distro("fedora", "Fedora Minimal", "Lean ARM64 RPM-based base", "dnf"),
+        Distro("void", "Void Linux", "Independent minimal command-line base", "xbps"),
+        Distro("kali", "Kali Linux Minimal", "Base system without security-tool bundles", "apt"),
+        Distro("manjaro", "Manjaro ARM Minimal", "ARM-focused minimal base", "pacman"),
+        Distro("gentoo", "Gentoo Minimal", "Customisable source-based base", "emerge"),
+        Distro("opensuse", "openSUSE Minimal", "Minimal ARM64 command-line system", "zypper"),
+        Distro("rocky", "Rocky Linux Minimal", "Minimal enterprise-style base", "dnf"),
+        Distro("buildroot", "Buildroot", "Custom embedded Linux root filesystem", "custom")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        buildTerminal()
-        if (prefs.getBoolean("ubuntu_selected", false)) {
-            append("MT-OS Terminal ready. Active environment: existing Ubuntu rootfs. Type help for commands.\n")
-        } else {
-            showDistroCatalogue()
-        }
+        active = prefs.getString("active_distro", null)
+        buildUi()
+        val id = active
+        if (id != null && exists(id)) append("Terminal ready — ${name(id)}. Type help.\n")
+        else { active = null; showCatalogue() }
     }
 
-    private fun buildTerminal() {
-        val root = LinearLayout(this).apply {
+    private fun name(id: String) = distros.firstOrNull { it.id == id }?.name ?: id
+    private fun root(id: String) = when (id) { "alpine" -> alpineRoot; "ubuntu" -> ubuntuRoot; else -> "" }
+    private fun exists(id: String): Boolean {
+        val p = root(id)
+        if (p.isEmpty()) return false
+        return try { Runtime.getRuntime().exec(arrayOf("su", "-c", "test -x '$p/bin/sh'")).waitFor() == 0 } catch (_: Exception) { false }
+    }
+
+    private fun buildUi() {
+        val base = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
             setBackgroundColor(Color.rgb(13, 17, 25))
         }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(TextView(this).apply {
-            text = "MT-OS  /  TERMINAL"
-            textSize = 16f
-            setTextColor(Color.WHITE)
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        bar.addView(TextView(this).apply {
+            text = "MT-OS  /  TERMINAL"; textSize = 16f; setTextColor(Color.WHITE)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
-        header.addView(actionButton("DISTROS") { showDistroCatalogue() })
-        header.addView(actionButton("CLEAR") { output.text = "" })
-        root.addView(header)
-        root.addView(TextView(this).apply {
-            text = "MINIMAL LINUX  •  COMMAND-LINE ONLY"
-            textSize = 10f
-            setTextColor(Color.rgb(111, 194, 168))
-            setPadding(0, 0, 0, dp(10))
+        bar.addView(btn("DISTROS") { showCatalogue() })
+        bar.addView(btn("CLEAR") { output.text = "" })
+        base.addView(bar)
+        base.addView(TextView(this).apply {
+            text = "MINIMAL LINUX  •  COMMAND-LINE ONLY"; textSize = 10f
+            setTextColor(Color.rgb(111, 194, 168)); setPadding(0, 0, 0, dp(10))
         })
         scroll = ScrollView(this).apply {
-            isFillViewport = true
-            setBackground(round(Color.rgb(7, 11, 17), 12))
+            isFillViewport = true; background = rounded(Color.rgb(7, 11, 17), 12)
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
         output = TextView(this).apply {
-            text = "MT-OS Terminal [version 0.2]\n"
-            textSize = 12f
-            typeface = Typeface.MONOSPACE
-            setTextColor(Color.rgb(218, 229, 239))
-            setTextIsSelectable(true)
+            text = "MT-OS Terminal [0.4]\n"; textSize = 12f; typeface = Typeface.MONOSPACE
+            setTextColor(Color.rgb(218, 229, 239)); setTextIsSelectable(true)
         }
         scroll.addView(output)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
-        val commandRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, 0)
-        }
+        base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, 0) }
         input = EditText(this).apply {
-            hint = "Enter a Linux command…"
-            setHintTextColor(Color.GRAY)
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            singleLine = true
-            imeOptions = EditorInfo.IME_ACTION_SEND
-            setPadding(dp(12), 0, dp(12), 0)
-            background = round(Color.rgb(30, 38, 51), 10)
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_SEND) { runCommand(); true } else false
-            }
+            hint = "Enter a Linux command…"; setHintTextColor(Color.GRAY); setTextColor(Color.WHITE)
+            textSize = 13f; singleLine = true; imeOptions = EditorInfo.IME_ACTION_SEND
+            setPadding(dp(12), 0, dp(12), 0); background = rounded(Color.rgb(30, 38, 51), 10)
+            setOnEditorActionListener { _, a, _ -> if (a == EditorInfo.IME_ACTION_SEND) { runCommand(); true } else false }
         }
-        commandRow.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
-        commandRow.addView(actionButton("RUN") { runCommand() }.apply {
-            setTextColor(Color.WHITE)
-            background = round(Color.rgb(92, 75, 180), 10)
-        }, LinearLayout.LayoutParams(dp(72), dp(46)).apply { leftMargin = dp(8) })
-        root.addView(commandRow)
-        setContentView(root)
+        row.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
+        row.addView(btn("RUN") { runCommand() }.apply { setTextColor(Color.WHITE); background = rounded(Color.rgb(92, 75, 180), 10) },
+            LinearLayout.LayoutParams(dp(72), dp(46)).apply { leftMargin = dp(8) })
+        base.addView(row)
+        setContentView(base)
     }
 
-    private fun showDistroCatalogue() {
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(8), dp(18), dp(8))
-        }
+    private fun showCatalogue() {
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        panel.addView(TextView(this).apply { text = "Choose your Linux distribution"; textSize = 20f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD })
         panel.addView(TextView(this).apply {
-            text = "Minimal Linux distributions"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
+            text = "First launch: choose a minimal ARM64 Linux system to download. After installation, MT Terminal opens that distribution automatically. All systems are command-line-only: no desktop environments or graphical bundles."
+            textSize = 12f; setTextColor(Color.LTGRAY); setPadding(0, dp(6), 0, dp(10))
         })
-        panel.addView(TextView(this).apply {
-            text = "Choose a command-line Linux system. Every entry is desktop-free: no GNOME, KDE, XFCE, LXQt, MATE, Phosh or graphical application bundles. Only the existing MT-OS Ubuntu environment is currently connected. Other ARM64 installers will be enabled only after their official rootfs and checksums are verified."
-            textSize = 12f
-            setTextColor(Color.LTGRAY)
-            setPadding(0, dp(6), 0, dp(10))
-        })
-        val dialogScroll = ScrollView(this)
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        distributions.forEach { distro ->
-            val available = distro.state == "Available locally"
+        val inner = ScrollView(this)
+        distros.forEach { d ->
+            val installed = exists(d.id)
+            val state = when { installed -> "INSTALLED • OPEN"; d.id == "alpine" -> "OFFICIAL DOWNLOAD"; d.id == "ubuntu" -> "EXISTING MT-OS"; else -> "COMING SOON" }
             val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = round(Color.rgb(34, 42, 58), 12)
+                orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = rounded(Color.rgb(34, 42, 58), 12)
                 setOnClickListener {
-                    if (available) selectExistingUbuntu()
-                    else showUnavailable(distro)
+                    when { installed -> select(d.id); d.id == "alpine" -> confirmAlpine(); d.id == "ubuntu" -> selectUbuntu(); else -> unavailable(d) }
                 }
             }
-            card.addView(TextView(this).apply {
-                text = distro.name + "   ·   " + distro.state
-                textSize = 15f
-                setTextColor(if (available) Color.rgb(111, 220, 170) else Color.WHITE)
-                typeface = Typeface.DEFAULT_BOLD
-            })
-            card.addView(TextView(this).apply {
-                text = distro.summary + "\nPackage manager: " + distro.manager + "\n" + distro.detail
-                textSize = 11f
-                setTextColor(Color.LTGRAY)
-                setPadding(0, dp(4), 0, 0)
-            })
+            card.addView(TextView(this).apply { text = "${d.name}   ·   $state"; textSize = 14f
+                setTextColor(if (installed || d.id == "alpine") Color.rgb(111, 220, 170) else Color.WHITE); typeface = Typeface.DEFAULT_BOLD })
+            card.addView(TextView(this).apply { text = "${d.summary}\nPackage manager: ${d.manager}"; textSize = 11f; setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, 0) })
             list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         }
-        dialogScroll.addView(list)
-        panel.addView(dialogScroll, LinearLayout.LayoutParams(-1, dp(360)))
-        AlertDialog.Builder(this)
-            .setView(panel)
-            .setNegativeButton("Close", null)
-            .show()
+        inner.addView(list); panel.addView(inner, LinearLayout.LayoutParams(-1, dp(365)))
+        AlertDialog.Builder(this).setView(panel).setNegativeButton("Close", null).show()
     }
 
-    private fun selectExistingUbuntu() {
-        AlertDialog.Builder(this)
-            .setTitle("Use existing MT-OS Ubuntu?")
-            .setMessage("This opens the Ubuntu root filesystem already used by MT-OS. No desktop environment or graphical package will be installed, and the existing Phosh/Phoc setup will not be changed.")
-            .setPositiveButton("Open terminal") { _, _ ->
-                prefs.edit().putBoolean("ubuntu_selected", true).apply()
-                append("\n[Selected existing MT-OS Ubuntu command-line environment]\n")
-                verifyRootfs()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+    private fun confirmAlpine() {
+        AlertDialog.Builder(this).setTitle("Download Alpine Linux?")
+            .setMessage("Download the official Alpine Linux $alpineVersion aarch64 mini root filesystem and its SHA-256 checksum from dl-cdn.alpinelinux.org. MT Terminal verifies the archive before extracting it into its own directory. No desktop environment is installed.")
+            .setPositiveButton("Download and install") { _, _ -> installAlpine() }.setNegativeButton("Cancel", null).show()
     }
 
-    private fun showUnavailable(distro: Distro) {
-        AlertDialog.Builder(this)
-            .setTitle(distro.name)
-            .setMessage("This distribution is listed as a minimal, command-line-only option, but its ARM64 root filesystem and matching checksum have not yet been integrated. It is not downloadable in this build. MT-OS will not offer an unverified or fabricated download.")
-            .setPositiveButton("OK", null)
-            .show()
-    }
-
-    private fun verifyRootfs() {
-        runRootfs("printf 'Ubuntu rootfs ready: '; . /etc/os-release && printf '%s\\n' \"$PRETTY_NAME\"; id")
-    }
-
-    private fun runCommand() {
+    private fun installAlpine() {
         if (busy) return
-        val command = input.text.toString().trim()
-        if (command.isEmpty()) return
-        input.text.clear()
-        append("\n\$ $command\n")
-        if (command == "help") {
-            append("Commands run inside the existing MT-OS Ubuntu rootfs. Try: pwd, ls, uname -a, apt update, apt install <package>, df -h, free -h, whoami, exit. No desktop installer is provided.\n")
-            return
-        }
-        if (command == "clear") { output.text = ""; return }
-        if (command == "exit") { finish(); return }
-        runRootfs(command)
-    }
-
-    private fun runRootfs(command: String) {
-        if (busy) return
-        busy = true
-        input.isEnabled = false
-        append("[starting Linux shell…]\n")
+        busy = true; input.isEnabled = false
+        append("\n[Downloading official Alpine Linux $alpineVersion aarch64 rootfs…]\n")
         Thread {
+            var archive: File? = null
             try {
-                val quoted = "'" + command.replace("'", "'\\''") + "'"
-                val script = "test -x '$rootfs/bin/sh' || { echo 'ERROR: existing MT-OS Ubuntu rootfs not found at $rootfs'; exit 20; }; chroot '$rootfs' /bin/bash -lc $quoted 2>&1"
-                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", script))
-                BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        val item = line ?: continue
-                        runOnUiThread { append(item + "\n") }
-                    }
-                }
-                val code = process.waitFor()
-                runOnUiThread { append("[process exited: $code]\n") }
-            } catch (e: Exception) {
-                runOnUiThread { append("[terminal error] ${e.message}\n") }
-            } finally {
+                val url = alpineUrl + archiveName
+                val checksumText = fetchText(url + ".sha256")
+                val expected = Regex("(?i)\\b[0-9a-f]{64}\\b").find(checksumText)?.value
+                    ?: error("Official SHA-256 file did not contain a digest")
+                archive = File(cacheDir, archiveName)
+                download(url, archive)
+                runOnUiThread { append("[Download complete. Verifying SHA-256…]\n") }
+                val actual = sha256(archive)
+                if (!actual.equals(expected, true)) { archive.delete(); throw SecurityException("Checksum mismatch; archive deleted.") }
+                runOnUiThread { append("[Checksum verified. Extracting minimal root filesystem…]\n") }
+                val a = archive.absolutePath
+                val script = "set -e; mkdir -p '$alpineRoot'; tar -xzf '$a' -C '$alpineRoot'; mkdir -p '$alpineRoot/dev' '$alpineRoot/proc' '$alpineRoot/sys' '$alpineRoot/run'; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$alpineRoot/etc/resolv.conf'; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > '$alpineRoot/etc/apk/repositories'; test -x '$alpineRoot/bin/sh'"
+                val result = rootExec(script)
+                archive.delete()
+                if (result.first != 0) error("Root extraction failed: ${result.second}")
                 runOnUiThread {
-                    busy = false
-                    input.isEnabled = true
-                    input.requestFocus()
+                    active = "alpine"; prefs.edit().putString("active_distro", "alpine").apply()
+                    append("[Alpine installed. Opening Alpine terminal…]\n")
+                    append("Next: run apk update to refresh package indexes.\n")
+                    busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
                 }
+            } catch (e: Exception) {
+                archive?.delete()
+                runOnUiThread { append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
             }
         }.start()
     }
 
-    private fun append(value: String) {
-        output.append(value)
-        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    private fun fetchText(address: String): String {
+        val c = (URL(address).openConnection() as HttpURLConnection).apply { connectTimeout = 20000; readTimeout = 30000; instanceFollowRedirects = true }
+        try { if (c.responseCode !in 200..299) error("Checksum server HTTP ${c.responseCode}"); return c.inputStream.bufferedReader().use { it.readText() } }
+        finally { c.disconnect() }
     }
 
-    private fun actionButton(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text
-        textSize = 10f
-        isAllCaps = false
-        setOnClickListener { action() }
+    private fun download(address: String, file: File) {
+        val c = (URL(address).openConnection() as HttpURLConnection).apply { connectTimeout = 20000; readTimeout = 60000; instanceFollowRedirects = true }
+        try {
+            if (c.responseCode !in 200..299) error("Download server HTTP ${c.responseCode}")
+            c.inputStream.use { source -> file.outputStream().use { target -> source.copyTo(target) } }
+            if (!file.isFile || file.length() == 0L) error("Downloaded archive is empty")
+        } finally { c.disconnect() }
     }
 
-    private fun round(color: Int, radius: Int) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = dp(radius).toFloat()
+    private fun sha256(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { s -> val b = ByteArray(65536); while (true) { val n = s.read(b); if (n < 0) break; md.update(b, 0, n) } }
+        return md.digest().joinToString("") { "%02x".format(it) }
     }
+
+    private fun select(id: String) {
+        active = id; prefs.edit().putString("active_distro", id).apply()
+        append("\n[Switched to ${name(id)}]\n"); runLinux("cat /etc/os-release; id")
+    }
+
+    private fun selectUbuntu() {
+        AlertDialog.Builder(this).setTitle("Use existing MT-OS Ubuntu?")
+            .setMessage("Open the existing MT-OS Ubuntu root filesystem without replacing its installed Phosh/Phoc environment.")
+            .setPositiveButton("Open Ubuntu") { _, _ -> if (exists("ubuntu")) select("ubuntu") else Toast.makeText(this, "Existing Ubuntu rootfs not found.", Toast.LENGTH_LONG).show() }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun unavailable(d: Distro) {
+        AlertDialog.Builder(this).setTitle(d.name)
+            .setMessage("The official ARM64 minimal rootfs downloader and its verification method are not integrated yet. This distribution is not downloadable in this build; MT-OS will not use an unverified archive.")
+            .setPositiveButton("OK", null).show()
+    }
+
+    private fun runCommand() {
+        if (busy) return
+        val cmd = input.text.toString().trim()
+        if (cmd.isEmpty()) return
+        input.text.clear(); append("\n\$ $cmd\n")
+        if (cmd == "help") { append("Run commands inside the selected minimal Linux distribution. Alpine: apk update, apk add <package>. Common: pwd, ls, uname -a, df -h, free -h, whoami, exit. No desktop installer.\n"); return }
+        if (cmd == "clear") { output.text = ""; return }
+        if (cmd == "exit") { finish(); return }
+        runLinux(cmd)
+    }
+
+    private fun runLinux(command: String) {
+        val id = active ?: run { showCatalogue(); return }
+        val r = root(id); if (r.isEmpty() || busy) return
+        busy = true; input.isEnabled = false
+        Thread {
+            try {
+                val q = "'" + command.replace("'", "'\\''") + "'"
+                val script = "R='$r'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -lc $q 2>&1; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
+                val result = rootExec(script)
+                runOnUiThread { if (result.second.isNotBlank()) append(result.second); if (!result.second.endsWith("\n")) append("\n"); append("[process exited: ${result.first}]\n") }
+            } catch (e: Exception) { runOnUiThread { append("[terminal error] ${e.message}\n") } }
+            finally { runOnUiThread { busy = false; input.isEnabled = true; input.requestFocus() } }
+        }.start()
+    }
+
+    private fun rootExec(script: String): Pair<Int, String> {
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", script))
+        val out = StringBuilder()
+        BufferedReader(InputStreamReader(p.inputStream)).use { r -> var line: String?; while (r.readLine().also { line = it } != null) out.append(line).append('\n') }
+        return Pair(p.waitFor(), out.toString())
+    }
+
+    private fun append(s: String) { output.append(s); scroll.post { scroll.fullScroll(View.FOCUS_DOWN) } }
+    private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 }
