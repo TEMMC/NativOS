@@ -72,8 +72,9 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_mt_gnome_TerminalActivity_nativeClosePty(JNIEnv *, jobject, jint fd, jint pid) {
     (void)fd; // ParcelFileDescriptor owns and closes the PTY master.
     if (pid > 0) {
-        kill(pid, SIGHUP);
+        kill(-pid, SIGHUP);
+        kill(pid, SIGTERM);
         int status = 0;
-        waitpid(pid, &status, WNOHANG);
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
     }
 }
