@@ -19,9 +19,8 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 
 /**
- * MT-OS Terminal. Commands are executed inside the Debian rootfs through Magisk.
- * The rootfs is shared with the MT-OS runtime; this activity never downloads or
- * replaces a rootfs image itself.
+ * MT-OS Terminal and minimal Linux distribution catalogue.
+ * No desktop environment or graphical Linux package is installed here.
  */
 class TerminalActivity : Activity() {
     private val rootfs = "/data/user/0/com.mt.os/files/rootfs"
@@ -29,26 +28,41 @@ class TerminalActivity : Activity() {
     private lateinit var output: TextView
     private lateinit var input: EditText
     private lateinit var scroll: ScrollView
-    private lateinit var content: LinearLayout
     private var busy = false
-    private var pendingDesktop: String? = null
 
-    private data class Desktop(val name: String, val subtitle: String, val pkg: String, val weight: String, val note: String)
-    private val desktops = listOf(
-        Desktop("XFCE", "Fast, traditional Linux desktop", "xfce4", "Moderate", "Best starting point for the A04e's limited RAM"),
-        Desktop("LXQt", "Lightweight Qt desktop", "lxqt", "Moderate", "Low resource use; suitable for compact devices"),
-        Desktop("MATE", "Classic, full-featured desktop", "mate-desktop-environment", "Large", "Traditional panel-and-window workflow"),
-        Desktop("GNOME", "Modern GNOME desktop", "gnome-session", "Very large", "Heavy on this phone; installation may be slow"),
-        Desktop("KDE Plasma", "Highly customizable desktop", "kde-plasma-desktop", "Very large", "Feature-rich but demanding on phone storage and RAM"),
-        Desktop("Cinnamon", "Familiar desktop layout", "cinnamon-desktop-environment", "Very large", "A full desktop stack with higher resource needs"),
-        Desktop("Phosh", "Mobile-first Linux shell", "phosh", "Moderate", "Designed for touchscreens; complements MT-Phoc/Phosh work")
+    private data class Distro(
+        val name: String,
+        val summary: String,
+        val manager: String,
+        val state: String,
+        val detail: String
+    )
+
+    // Entries are deliberately base-system/CLI-only. Availability is not implied
+    // until an official ARM64 rootfs and its checksum can be verified.
+    private val distributions = listOf(
+        Distro("Alpine Linux", "Tiny, security-oriented base system", "apk", "Catalogue", "BusyBox and musl; excellent low-footprint option."),
+        Distro("Debian", "Stable minimal ARM64 base", "apt", "Catalogue", "Install only essential packages; no desktop task."),
+        Distro("Ubuntu", "Minimal Ubuntu command-line system", "apt", "Available locally", "Uses the existing MT-OS Ubuntu rootfs. No desktop packages are added."),
+        Distro("Arch Linux ARM", "Lean rolling-release base", "pacman", "Catalogue", "Minimal base; package availability depends on ARM64 image source."),
+        Distro("Fedora", "Minimal RPM-based system", "dnf", "Catalogue", "No workstation or desktop groups."),
+        Distro("Void Linux", "Independent minimal distribution", "xbps", "Catalogue", "runit-based system with a small base."),
+        Distro("Kali Linux", "Minimal security-focused base", "apt", "Catalogue", "Base system only; no large tool collections."),
+        Distro("Manjaro ARM", "ARM-focused minimal base", "pacman", "Catalogue", "Availability depends on a maintained minimal ARM64 image."),
+        Distro("Gentoo", "Customisable minimal base", "emerge", "Catalogue", "Advanced setup; compiling packages can be demanding on this phone."),
+        Distro("openSUSE", "Minimal RPM-based base", "zypper", "Catalogue", "No graphical patterns or desktop packages."),
+        Distro("Rocky Linux", "Minimal enterprise-style base", "dnf", "Catalogue", "ARM64 rootfs availability must be verified."),
+        Distro("Buildroot", "Build-your-own tiny Linux rootfs", "custom", "Catalogue", "Embedded root filesystem builder, not a general-purpose distro installer.")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildTerminal()
-        if (prefs.getString("selected_desktop", null) == null) showDesktopCatalogue()
-        else append("MT-OS Terminal ready. Type help for commands.\n")
+        if (prefs.getBoolean("ubuntu_selected", false)) {
+            append("MT-OS Terminal ready. Active environment: existing Ubuntu rootfs. Type help for commands.\n")
+        } else {
+            showDistroCatalogue()
+        }
     }
 
     private fun buildTerminal() {
@@ -67,11 +81,11 @@ class TerminalActivity : Activity() {
             setTextColor(Color.WHITE)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
-        header.addView(actionButton("DESKTOPS") { showDesktopCatalogue() })
+        header.addView(actionButton("DISTROS") { showDistroCatalogue() })
         header.addView(actionButton("CLEAR") { output.text = "" })
         root.addView(header)
         root.addView(TextView(this).apply {
-            text = "LINUX SHELL  •  ROOTFS SESSION"
+            text = "MINIMAL LINUX  •  COMMAND-LINE ONLY"
             textSize = 10f
             setTextColor(Color.rgb(111, 194, 168))
             setPadding(0, 0, 0, dp(10))
@@ -82,7 +96,7 @@ class TerminalActivity : Activity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
         output = TextView(this).apply {
-            text = "MT-OS Terminal [version 0.1]\n"
+            text = "MT-OS Terminal [version 0.2]\n"
             textSize = 12f
             typeface = Typeface.MONOSPACE
             setTextColor(Color.rgb(218, 229, 239))
@@ -117,40 +131,44 @@ class TerminalActivity : Activity() {
         setContentView(root)
     }
 
-    private fun showDesktopCatalogue() {
+    private fun showDistroCatalogue() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(8), dp(18), dp(8))
         }
         panel.addView(TextView(this).apply {
-            text = "Choose a Linux desktop"
+            text = "Minimal Linux distributions"
             textSize = 20f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
         })
         panel.addView(TextView(this).apply {
-            text = "Select one environment to install into the existing Ubuntu 24.04 root filesystem. Downloads require an internet connection and free storage. You can change your choice later."
+            text = "Choose a command-line Linux system. Every entry is desktop-free: no GNOME, KDE, XFCE, LXQt, MATE, Phosh or graphical application bundles. Only the existing MT-OS Ubuntu environment is currently connected. Other ARM64 installers will be enabled only after their official rootfs and checksums are verified."
             textSize = 12f
             setTextColor(Color.LTGRAY)
             setPadding(0, dp(6), 0, dp(10))
         })
         val dialogScroll = ScrollView(this)
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        desktops.forEach { desktop ->
+        distributions.forEach { distro ->
+            val available = distro.state == "Available locally"
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = round(Color.rgb(34, 42, 58), 12)
-                setOnClickListener { confirmInstall(desktop) }
+                setOnClickListener {
+                    if (available) selectExistingUbuntu()
+                    else showUnavailable(distro)
+                }
             }
             card.addView(TextView(this).apply {
-                text = desktop.name + "   ·   " + desktop.weight
+                text = distro.name + "   ·   " + distro.state
                 textSize = 15f
-                setTextColor(Color.WHITE)
+                setTextColor(if (available) Color.rgb(111, 220, 170) else Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
             })
             card.addView(TextView(this).apply {
-                text = desktop.subtitle + "\n" + desktop.note
+                text = distro.summary + "\nPackage manager: " + distro.manager + "\n" + distro.detail
                 textSize = 11f
                 setTextColor(Color.LTGRAY)
                 setPadding(0, dp(4), 0, 0)
@@ -158,27 +176,36 @@ class TerminalActivity : Activity() {
             list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         }
         dialogScroll.addView(list)
-        panel.addView(dialogScroll, LinearLayout.LayoutParams(-1, dp(330)))
+        panel.addView(dialogScroll, LinearLayout.LayoutParams(-1, dp(360)))
         AlertDialog.Builder(this)
             .setView(panel)
-            .setNegativeButton("Not now", null)
+            .setNegativeButton("Close", null)
             .show()
     }
 
-    private fun confirmInstall(desktop: Desktop) {
+    private fun selectExistingUbuntu() {
         AlertDialog.Builder(this)
-            .setTitle("Install ${desktop.name}?")
-            .setMessage("MT-OS will run apt inside the existing Ubuntu rootfs and install ${desktop.pkg}. This can download many packages and use substantial storage. Keep the phone connected to power and Wi-Fi. The desktop packages will be installed; launching a graphical Linux session still depends on the configured display server.")
-            .setPositiveButton("Download and install") { _, _ -> installDesktop(desktop) }
+            .setTitle("Use existing MT-OS Ubuntu?")
+            .setMessage("This opens the Ubuntu root filesystem already used by MT-OS. No desktop environment or graphical package will be installed, and the existing Phosh/Phoc setup will not be changed.")
+            .setPositiveButton("Open terminal") { _, _ ->
+                prefs.edit().putBoolean("ubuntu_selected", true).apply()
+                append("\n[Selected existing MT-OS Ubuntu command-line environment]\n")
+                verifyRootfs()
+            }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun installDesktop(desktop: Desktop) {
-        if (busy) return
-        pendingDesktop = desktop.name
-        append("\n\$ Installing ${desktop.name}…\n")
-        runRootfs("export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y --no-install-recommends ${desktop.pkg}")
+    private fun showUnavailable(distro: Distro) {
+        AlertDialog.Builder(this)
+            .setTitle(distro.name)
+            .setMessage("This distribution is listed as a minimal, command-line-only option, but its ARM64 root filesystem and matching checksum have not yet been integrated. It is not downloadable in this build. MT-OS will not offer an unverified or fabricated download.")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun verifyRootfs() {
+        runRootfs("printf 'Ubuntu rootfs ready: '; . /etc/os-release && printf '%s\\n' \"$PRETTY_NAME\"; id")
     }
 
     private fun runCommand() {
@@ -188,7 +215,7 @@ class TerminalActivity : Activity() {
         input.text.clear()
         append("\n\$ $command\n")
         if (command == "help") {
-            append("Commands run inside the Debian rootfs. Try: pwd, ls, uname -a, apt update, apt install <package>, df -h, free -h, whoami, exit.\n")
+            append("Commands run inside the existing MT-OS Ubuntu rootfs. Try: pwd, ls, uname -a, apt update, apt install <package>, df -h, free -h, whoami, exit. No desktop installer is provided.\n")
             return
         }
         if (command == "clear") { output.text = ""; return }
@@ -197,13 +224,14 @@ class TerminalActivity : Activity() {
     }
 
     private fun runRootfs(command: String) {
+        if (busy) return
         busy = true
         input.isEnabled = false
         append("[starting Linux shell…]\n")
         Thread {
             try {
                 val quoted = "'" + command.replace("'", "'\\''") + "'"
-                val script = "test -x '$rootfs/bin/sh' || { echo 'ERROR: Debian rootfs not found at $rootfs'; exit 20; }; chroot '$rootfs' /bin/bash -lc $quoted 2>&1"
+                val script = "test -x '$rootfs/bin/sh' || { echo 'ERROR: existing MT-OS Ubuntu rootfs not found at $rootfs'; exit 20; }; chroot '$rootfs' /bin/bash -lc $quoted 2>&1"
                 val process = Runtime.getRuntime().exec(arrayOf("su", "-c", script))
                 BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
                     var line: String?
@@ -213,14 +241,7 @@ class TerminalActivity : Activity() {
                     }
                 }
                 val code = process.waitFor()
-                runOnUiThread {
-                    append("[process exited: $code]\n")
-                    if (code == 0 && pendingDesktop != null) {
-                        prefs.edit().putString("selected_desktop", pendingDesktop).apply()
-                        append("[" + pendingDesktop + " installation completed successfully]\n")
-                    }
-                    pendingDesktop = null
-                }
+                runOnUiThread { append("[process exited: $code]\n") }
             } catch (e: Exception) {
                 runOnUiThread { append("[terminal error] ${e.message}\n") }
             } finally {
