@@ -373,7 +373,7 @@ class TerminalActivity : Activity() {
                 }
                 runOnUiThread { updateInstallPhase("Extracting and preparing Linux filesystem…") }
                 val a = tarOutput.absolutePath
-                val script = "set -e; rm -rf '$staging'; mkdir -p '$staging'; tar -xpf '$a' -C '$staging'; test -x '$staging/bin/sh'; mkdir -p '$staging/dev' '$staging/proc' '$staging/sys' '$staging/run'; if [ -e '$staging/etc/resolv.conf' ]; then rm -f '$staging/etc/resolv.conf'; fi; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$staging/etc/resolv.conf'; rm -rf '$target'; mv '$staging' '$target'; test -x '$target/bin/sh'"
+                val script = "set -e; rm -rf '$staging'; mkdir -p '$staging'; tar -xpf '$a' -C '$staging'; test -x '$staging/bin/sh'; mkdir -p '$staging/dev' '$staging/proc' '$staging/sys' '$staging/run'; if [ -e '$staging/etc/resolv.conf' ]; then rm -f '$staging/etc/resolv.conf'; fi; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$staging/etc/resolv.conf'; backup=$target.previous; rm -rf $backup; if [ -e $target ]; then mv $target $backup; fi; if mv $staging $target; then rm -rf $backup; else [ ! -e $backup ] || mv $backup $target; exit 1; fi; test -x $target/bin/sh"
                 val result = rootExec(script)
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
                 runOnUiThread {
