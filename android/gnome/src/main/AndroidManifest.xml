@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="true"
         android:label="MT-GNOME"
@@ -9,6 +10,7 @@
         android:theme="@style/Theme.MTGnome"
         android:supportsRtl="true"
         android:resizeableActivity="true">
+        <activity android:name=".TerminalActivity" android:exported="false" android:label="MT-OS Terminal" />
         <activity
             android:name=".GnomeHomeActivity"
             android:exported="true"
