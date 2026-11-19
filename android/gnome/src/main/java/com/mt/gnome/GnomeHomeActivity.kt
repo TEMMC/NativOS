@@ -49,6 +49,7 @@ class GnomeHomeActivity : Activity() {
         buildDesktop()
         loadApps()
         updateRootStatus()
+        showFirstRunSetupIfNeeded()
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -257,17 +258,66 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun showQuickSettings() {
-        val names = arrayOf("System settings", "Wi-Fi", "Bluetooth", "Display", "Notifications")
-        AlertDialog.Builder(this).setTitle("Quick settings").setItems(names) { _, which ->
+        val names = arrayOf("Enable Linux-style app windows", "System settings", "Wi-Fi", "Bluetooth", "Display", "Notifications")
+        AlertDialog.Builder(this).setTitle("MT desktop controls").setItems(names) { _, which ->
+            if (which == 0) {
+                enableLinuxWindows()
+                return@setItems
+            }
             val action = when (which) {
-                1 -> Settings.ACTION_WIFI_SETTINGS
-                2 -> Settings.ACTION_BLUETOOTH_SETTINGS
-                3 -> Settings.ACTION_DISPLAY_SETTINGS
-                4 -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+                2 -> Settings.ACTION_WIFI_SETTINGS
+                3 -> Settings.ACTION_BLUETOOTH_SETTINGS
+                4 -> Settings.ACTION_DISPLAY_SETTINGS
+                5 -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
                 else -> Settings.ACTION_SETTINGS
             }
             try { startActivity(Intent(action)) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }.show()
+    }
+
+    private fun showFirstRunSetupIfNeeded() {
+        if (prefs.getBoolean("setup_seen", false)) return
+        desktop.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            AlertDialog.Builder(this)
+                .setTitle("Set up MT-GNOME desktop")
+                .setMessage(
+                    "MT-GNOME does not need ordinary Android runtime permissions for its current features. " +
+                    "To enable Linux-style floating app windows, it needs your approval for root access in Magisk. " +
+                    "Android/Samsung still controls each app's actual window frame and may restrict freeform mode."
+                )
+                .setPositiveButton("Enable desktop windows") { _, _ ->
+                    prefs.edit().putBoolean("setup_seen", true).apply()
+                    enableLinuxWindows()
+                }
+                .setNegativeButton("Not now") { _, _ ->
+                    prefs.edit().putBoolean("setup_seen", true).apply()
+                }
+                .setOnCancelListener { prefs.edit().putBoolean("setup_seen", true).apply() }
+                .show()
+        }, 450)
+    }
+
+    private fun enableLinuxWindows() {
+        Thread {
+            val result = RootWindowBridge(this).runRoot(
+                "settings put global enable_freeform_support 1 && " +
+                "settings put global force_resizable_activities 1"
+            )
+            runOnUiThread {
+                val success = result.contains("exit=0")
+                AlertDialog.Builder(this)
+                    .setTitle(if (success) "Desktop window mode enabled" else "Root access required")
+                    .setMessage(
+                        if (success) "Android accepted the freeform/resizable window settings. " +
+                            "Open apps from MT-GNOME to try floating windows. Samsung firmware may still restrict some apps."
+                        else "Approve MT-GNOME in the Magisk prompt, then try again.\n\n$result"
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+                updateRootStatus()
+            }
+        }.start()
     }
 
     private fun showAppearance() {
