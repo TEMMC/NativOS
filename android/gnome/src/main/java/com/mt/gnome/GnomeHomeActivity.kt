@@ -151,6 +151,7 @@ class GnomeHomeActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
+        addDockButton(dock, "▦", "Calculator") { showCalculator() }
         addDockButton(dock, "⚙", "Desktop settings") { showAppearance() }
         bottom.addView(dock, LinearLayout.LayoutParams(-1, dp(47)))
         rootStatus = label("Checking system access…", 9, muted, true).apply {
@@ -222,6 +223,77 @@ class GnomeHomeActivity : Activity() {
                 .setClassName(info.activityInfo.packageName, info.activityInfo.name)
             try { startActivity(intent) } catch (_: Exception) { toast("Unable to launch application") }
         }
+    }
+
+    private fun showCalculator() {
+        val expression = EditText(this).apply {
+            hint = "0"
+            textSize = 26f
+            setSingleLine(true)
+            setTextColor(Color.WHITE)
+            setHintTextColor(muted)
+            gravity = Gravity.END
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(Color.argb(225, 34, 42, 72), 14)
+            showSoftInputOnFocus = false
+        }
+        val keys = arrayOf(
+            arrayOf("C", "⌫", "(", ")"),
+            arrayOf("7", "8", "9", "÷"),
+            arrayOf("4", "5", "6", "×"),
+            arrayOf("1", "2", "3", "−"),
+            arrayOf("%", "0", ".", "+"),
+            arrayOf("=", "", "", "")
+        )
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        layout.addView(expression, LinearLayout.LayoutParams(-1, dp(62)))
+        keys.forEach { row ->
+            val line = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            row.filter { it.isNotEmpty() }.forEach { key ->
+                val button = TextView(this).apply {
+                    text = key
+                    textSize = 19f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    background = rounded(Color.argb(210, 48, 59, 91), 12)
+                    setOnClickListener {
+                        when (key) {
+                            "C" -> expression.setText("")
+                            "⌫" -> {
+                                val value = expression.text.toString()
+                                if (value.isNotEmpty()) expression.setText(value.dropLast(1))
+                            }
+                            "=" -> try {
+                                val result = CalculatorParser(expression.text.toString()).parse()
+                                expression.setText(if (result.isFinite()) {
+                                    if (result % 1.0 == 0.0) result.toLong().toString()
+                                    else String.format(Locale.US, "%.10f", result).trimEnd('0').trimEnd('.')
+                                } else "Error")
+                            } catch (_: Exception) { expression.setText("Error") }
+                            else -> {
+                                if (expression.text.toString() == "Error") expression.setText("")
+                                expression.append(when (key) { "×" -> "*"; "÷" -> "/"; "−" -> "-"; else -> key })
+                            }
+                        }
+                    }
+                }
+                line.addView(button, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+                    setMargins(dp(3), dp(3), dp(3), dp(3))
+                })
+            }
+            layout.addView(line, LinearLayout.LayoutParams(-1, dp(58)))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("MT Calculator")
+            .setView(layout)
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun showQuickSettings() {
@@ -348,4 +420,80 @@ private class RootWindowBridge(private val activity: Activity) {
         output + "\n" + errors + "\nexit=" + exitCode
     } catch (error: Exception) { error.toString() }
     private fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+}
+ 
+private class CalculatorParser(private val input: String) {
+    private var position = 0
+
+    fun parse(): Double {
+        val value = expression()
+        skipSpaces()
+        if (position != input.length || !value.isFinite()) throw IllegalArgumentException("Invalid expression")
+        return value
+    }
+
+    private fun expression(): Double {
+        var value = term()
+        while (true) {
+            skipSpaces()
+            value = when {
+                take('+') -> value + term()
+                take('-') -> value - term()
+                else -> return value
+            }
+        }
+    }
+
+    private fun term(): Double {
+        var value = factor()
+        while (true) {
+            skipSpaces()
+            value = when {
+                take('*') -> value * factor()
+                take('/') -> {
+                    val divisor = factor()
+                    if (divisor == 0.0) throw ArithmeticException("Division by zero")
+                    value / divisor
+                }
+                else -> return value
+            }
+        }
+    }
+
+    private fun factor(): Double {
+        skipSpaces()
+        if (take('+')) return factor()
+        if (take('-')) return -factor()
+        if (take('(')) {
+            val value = expression()
+            skipSpaces()
+            if (!take(')')) throw IllegalArgumentException("Missing closing bracket")
+            return value
+        }
+        val start = position
+        var dotSeen = false
+        while (position < input.length) {
+            val c = input[position]
+            if (c.isDigit()) position++
+            else if (c == '.' && !dotSeen) { dotSeen = true; position++ }
+            else break
+        }
+        if (start == position) throw IllegalArgumentException("Number expected")
+        var value = input.substring(start, position).toDouble()
+        skipSpaces()
+        if (take('%')) value /= 100.0
+        return value
+    }
+
+    private fun take(char: Char): Boolean {
+        if (position < input.length && input[position] == char) {
+            position++
+            return true
+        }
+        return false
+    }
+
+    private fun skipSpaces() {
+        while (position < input.length && input[position].isWhitespace()) position++
+    }
 }
