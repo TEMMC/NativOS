@@ -129,7 +129,9 @@ class TerminalActivity : Activity() {
         toolbar.addView(btn("Clear") { output.text = "" })
         toolbar.addView(btn("Help") { append("\nPersistent shell: cd, export, package managers and foreground processes share one session. Ctrl+C interrupts.\n") })
         toolbar.addView(btn("Ctrl+C") { sendPty("\u0003") })
+        toolbar.addView(btn("Ctrl+D") { sendPty("\u0004") })
         toolbar.addView(btn("Tab") { sendPty("\t") })
+        toolbar.addView(btn("Esc") { sendPty("\u001b") })
         base.addView(toolbar)
         base.addView(TextView(this).apply {
             text = "LINUX SHELL  •  ARM64"
