@@ -160,6 +160,7 @@ class TerminalActivity : Activity() {
     private fun installAlpine() {
         if (busy) return
         busy = true; input.isEnabled = false
+        showInstallProgress("Installing Alpine Linux")
         append("\n[Downloading official Alpine Linux $alpineVersion aarch64 rootfs…]\n")
         Thread {
             var archive: File? = null
@@ -169,11 +170,11 @@ class TerminalActivity : Activity() {
                 val expected = Regex("(?i)\\b[0-9a-f]{64}\\b").find(checksumText)?.value
                     ?: error("Official SHA-256 file did not contain a digest")
                 archive = File(cacheDir, archiveName)
-                download(url, archive)
-                runOnUiThread { append("[Download complete. Verifying SHA-256…]\n") }
+                download(url, archive) { done, total -> updateInstallProgress("Downloading Alpine", done, total) }
+                runOnUiThread { updateInstallPhase("Verifying archive checksum…"); append("[Download complete. Verifying SHA-256…]\n") }
                 val actual = sha256(archive)
                 if (!actual.equals(expected, true)) { archive.delete(); throw SecurityException("Checksum mismatch; archive deleted.") }
-                runOnUiThread { append("[Checksum verified. Extracting minimal root filesystem…]\n") }
+                runOnUiThread { updateInstallPhase("Extracting root filesystem…"); append("[Checksum verified. Extracting minimal root filesystem…]\n") }
                 val a = archive.absolutePath
                 val script = "set -e; mkdir -p '$alpineRoot'; tar -xzf '$a' -C '$alpineRoot'; mkdir -p '$alpineRoot/dev' '$alpineRoot/proc' '$alpineRoot/sys' '$alpineRoot/run'; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$alpineRoot/etc/resolv.conf'; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > '$alpineRoot/etc/apk/repositories'; test -x '$alpineRoot/bin/sh'"
                 val result = rootExec(script)
@@ -183,11 +184,11 @@ class TerminalActivity : Activity() {
                     active = "alpine"; prefs.edit().putString("active_distro", "alpine").apply()
                     append("[Alpine installed. Opening Alpine terminal…]\n")
                     append("Next: run apk update to refresh package indexes.\n")
-                    busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
+                    dismissInstallProgress(); busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
                 }
             } catch (e: Exception) {
                 archive?.delete()
-                runOnUiThread { append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
+                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
             }
         }.start()
     }
@@ -198,13 +199,63 @@ class TerminalActivity : Activity() {
         finally { c.disconnect() }
     }
 
-    private fun download(address: String, file: File) {
-        val c = (URL(address).openConnection() as HttpURLConnection).apply { connectTimeout = 20000; readTimeout = 60000; instanceFollowRedirects = true }
+    private fun download(address: String, file: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        val c = (URL(address).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 20000; readTimeout = 60000; instanceFollowRedirects = true
+        }
         try {
             if (c.responseCode !in 200..299) error("Download server HTTP ${c.responseCode}")
-            c.inputStream.use { source -> file.outputStream().use { target -> source.copyTo(target) } }
+            val total = c.contentLengthLong
+            c.inputStream.use { source ->
+                file.outputStream().buffered().use { target ->
+                    val buffer = ByteArray(64 * 1024)
+                    var done = 0L
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        target.write(buffer, 0, count)
+                        done += count
+                        onProgress(done, total)
+                    }
+                }
+            }
             if (!file.isFile || file.length() == 0L) error("Downloaded archive is empty")
+            if (total > 0 && file.length() != total) error("Download ended early: received ${file.length()} of $total bytes")
         } finally { c.disconnect() }
+    }
+
+    private fun showInstallProgress(title: String) {
+        runOnUiThread {
+            installProgress = ProgressDialog(this).apply {
+                setTitle(title)
+                setMessage("Preparing download…")
+                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                max = 100
+                progress = 0
+                setCancelable(false)
+                setCanceledOnTouchOutside(false)
+                show()
+            }
+        }
+    }
+
+    private fun updateInstallProgress(phase: String, done: Long, total: Long) {
+        runOnUiThread {
+            installProgress?.let { dialog ->
+                dialog.setMessage(if (total > 0) "$phase — ${done / 1048576} / ${total / 1048576} MB" else "$phase — ${done / 1048576} MB")
+                if (total > 0) { dialog.isIndeterminate = false; dialog.progress = ((done * 100L) / total).toInt().coerceIn(0, 100) }
+                else dialog.isIndeterminate = true
+            }
+        }
+    }
+
+    private fun updateInstallPhase(message: String) {
+        runOnUiThread { installProgress?.let { it.isIndeterminate = true; it.setMessage(message) } }
+    }
+
+    private fun dismissInstallProgress() {
+        installProgress?.dismiss()
+        installProgress = null
     }
 
     private fun sha256(file: File): String {
@@ -229,6 +280,7 @@ class TerminalActivity : Activity() {
         val imagePath = d.imagePath ?: return
         if (busy) return
         busy = true; input.isEnabled = false
+        showInstallProgress("Installing ${d.name}")
         append("\n[Finding latest ARM64 ${d.name} rootfs…]\n")
         Thread {
             var archive: File? = null
@@ -246,13 +298,15 @@ class TerminalActivity : Activity() {
                     ?: error("Published SHA256SUMS does not include rootfs.tar.xz")
                 archive = File(cacheDir, "${d.id}-rootfs.tar.xz")
                 tarFile = File(cacheDir, "${d.id}-rootfs.tar")
-                download(buildUrl + "rootfs.tar.xz", archive)
-                runOnUiThread { append("[Verifying published SHA-256…]\n") }
+                runOnUiThread { updateInstallPhase("Downloading ${d.name} rootfs…") }
+                download(buildUrl + "rootfs.tar.xz", archive) { done, total -> updateInstallProgress("Downloading ${d.name}", done, total) }
+                runOnUiThread { updateInstallPhase("Verifying published SHA-256…"); append("[Verifying published SHA-256…]\n") }
                 if (!sha256(archive).equals(expected, true)) throw SecurityException("SHA-256 mismatch; archive rejected")
-                runOnUiThread { append("[Checksum verified. Decompressing rootfs…]\n") }
+                runOnUiThread { updateInstallPhase("Checksum verified. Decompressing rootfs…"); append("[Checksum verified. Decompressing rootfs…]\n") }
                 XZInputStream(archive.inputStream().buffered()).use { xz ->
                     tarFile.outputStream().buffered().use { out -> xz.copyTo(out) }
                 }
+                runOnUiThread { updateInstallPhase("Extracting and preparing Linux filesystem…") }
                 val a = tarFile.absolutePath
                 val script = "set -e; rm -rf '$staging'; mkdir -p '$staging'; tar -xpf '$a' -C '$staging'; test -x '$staging/bin/sh'; mkdir -p '$staging/dev' '$staging/proc' '$staging/sys' '$staging/run'; if [ -e '$staging/etc/resolv.conf' ]; then rm -f '$staging/etc/resolv.conf'; fi; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$staging/etc/resolv.conf'; rm -rf '$target'; mv '$staging' '$target'; test -x '$target/bin/sh'"
                 val result = rootExec(script)
@@ -260,11 +314,11 @@ class TerminalActivity : Activity() {
                 runOnUiThread {
                     active = d.id; prefs.edit().putString("active_distro", d.id).apply()
                     append("[${d.name} installed. Opening terminal…]\n")
-                    busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
+                    dismissInstallProgress(); busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
                 }
             } catch (e: Exception) {
                 rootExec("rm -rf '$staging'")
-                runOnUiThread { append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
+                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
             } finally { archive?.delete(); tarFile?.delete() }
         }.start()
     }
