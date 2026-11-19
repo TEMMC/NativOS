@@ -163,6 +163,7 @@ class GnomeHomeActivity : Activity() {
         }
         addDockButton(dock, "⌂", "Home") { category = "All"; search.setText(""); refreshCategories() }
         addDockButton(dock, "▣", "Windows") { showWindows() }
+        addDockButton(dock, "▦", "Calculator") { showCalculator() }
         addDockButton(dock, "⌕", "Find") {
             search.requestFocus()
             (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
@@ -275,6 +276,98 @@ class GnomeHomeActivity : Activity() {
             .setItems(arrayOf("Open application", "Open in floating window · root")) { _, which ->
                 if (which == 0) launchApp(info) else RootWindowBridge(this).launchFreeform(info)
             }.show()
+    }
+
+    private fun showCalculator() {
+        val display = TextView(this).apply {
+            text = "0"
+            textSize = 34f
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = rounded(Color.rgb(24, 31, 56), 16)
+            minHeight = dp(82)
+        }
+        var expression = ""
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(30, 35, 66), Color.rgb(15, 20, 39))).apply {
+                cornerRadius = dp(22).toFloat()
+            }
+        }
+        layout.addView(label("MT-OS CALCULATOR", 10, muted, true).apply {
+            setPadding(dp(4), dp(3), 0, dp(12))
+        })
+        layout.addView(display, LinearLayout.LayoutParams(-1, dp(82)))
+        val keys = arrayOf(
+            arrayOf("C", "⌫", "(", "÷"),
+            arrayOf("7", "8", "9", "×"),
+            arrayOf("4", "5", "6", "−"),
+            arrayOf("1", "2", "3", "+"),
+            arrayOf("%", "0", ".", "=")
+        )
+        val grid = GridLayout(this).apply {
+            columnCount = 4
+            setPadding(0, dp(12), 0, 0)
+        }
+        fun refresh() { display.text = if (expression.isEmpty()) "0" else expression }
+        keys.forEach { row ->
+            row.forEach { key ->
+                val special = key in listOf("÷", "×", "−", "+", "=")
+                val action = TextView(this).apply {
+                    text = key
+                    textSize = if (key.length > 1) 17f else 21f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    background = rounded(
+                        when {
+                            key == "=" -> Color.rgb(111, 96, 224)
+                            special -> Color.rgb(55, 62, 105)
+                            key == "C" -> Color.rgb(125, 55, 83)
+                            else -> Color.argb(180, 45, 53, 82)
+                        }, 14
+                    )
+                    setOnClickListener {
+                        when (key) {
+                            "C" -> expression = ""
+                            "⌫" -> if (expression.isNotEmpty()) expression = expression.dropLast(1)
+                            "=" -> try {
+                                val result = CalculatorParser(expression).parse()
+                                expression = if (result.isFinite()) {
+                                    if (result == result.toLong().toDouble()) result.toLong().toString()
+                                    else String.format(Locale.US, "%.10f", result).trimEnd('0').trimEnd('.')
+                                } else "Error"
+                            } catch (_: Exception) { expression = "Error" }
+                            else -> {
+                                if (expression == "Error") expression = ""
+                                expression += when (key) {
+                                    "÷" -> "/"
+                                    "×" -> "*"
+                                    "−" -> "-"
+                                    else -> key
+                                }
+                            }
+                        }
+                        refresh()
+                    }
+                }
+                grid.addView(action, GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = dp(54)
+                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                })
+            }
+        }
+        layout.addView(grid)
+        AlertDialog.Builder(this)
+            .setView(layout)
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun showWindows() {
@@ -395,4 +488,78 @@ private class RootWindowBridge(private val activity: Activity) {
     }
 
     private fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+}
+
+private class CalculatorParser(private val input: String) {
+    private var position = 0
+
+    fun parse(): Double {
+        if (input.isBlank()) throw IllegalArgumentException("Empty expression")
+        val value = expression()
+        skipSpaces()
+        if (position != input.length) throw IllegalArgumentException("Unexpected input")
+        return value
+    }
+
+    private fun expression(): Double {
+        var value = term()
+        while (true) {
+            skipSpaces()
+            value = when {
+                take('+') -> value + term()
+                take('-') -> value - term()
+                else -> return value
+            }
+        }
+    }
+
+    private fun term(): Double {
+        var value = factor()
+        while (true) {
+            skipSpaces()
+            value = when {
+                take('*') -> value * factor()
+                take('/') -> {
+                    val divisor = factor()
+                    if (divisor == 0.0) throw ArithmeticException("Division by zero")
+                    value / divisor
+                }
+                take('%') -> value % factor()
+                else -> return value
+            }
+        }
+    }
+
+    private fun factor(): Double {
+        skipSpaces()
+        if (take('+')) return factor()
+        if (take('-')) return -factor()
+        if (take('(')) {
+            val value = expression()
+            skipSpaces()
+            if (!take(')')) throw IllegalArgumentException("Missing closing bracket")
+            return value
+        }
+        val start = position
+        var dots = 0
+        while (position < input.length && (input[position].isDigit() || input[position] == '.')) {
+            if (input[position] == '.') dots++
+            if (dots > 1) throw IllegalArgumentException("Invalid number")
+            position++
+        }
+        if (start == position) throw IllegalArgumentException("Number expected")
+        return input.substring(start, position).toDouble()
+    }
+
+    private fun take(char: Char): Boolean {
+        if (position < input.length && input[position] == char) {
+            position++
+            return true
+        }
+        return false
+    }
+
+    private fun skipSpaces() {
+        while (position < input.length && input[position].isWhitespace()) position++
+    }
 }
