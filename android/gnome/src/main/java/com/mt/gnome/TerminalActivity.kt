@@ -36,20 +36,21 @@ class TerminalActivity : Activity() {
     private var busy = false
     private var active: String? = null
 
-    private data class Distro(val id: String, val name: String, val summary: String, val manager: String)
+    private data class Distro(val id: String, val name: String, val summary: String, val manager: String, val imagePath: String? = null)
     private val distros = listOf(
         Distro("alpine", "Alpine Linux", "Official ultra-small aarch64 mini root filesystem", "apk"),
-        Distro("debian", "Debian Minimal", "Stable minimal command-line base", "apt"),
-        Distro("ubuntu", "Ubuntu Minimal", "Existing MT-OS Ubuntu environment", "apt"),
-        Distro("arch", "Arch Linux ARM", "Minimal rolling-release ARM64 base", "pacman"),
-        Distro("fedora", "Fedora Minimal", "Lean ARM64 RPM-based base", "dnf"),
-        Distro("void", "Void Linux", "Independent minimal command-line base", "xbps"),
-        Distro("kali", "Kali Linux Minimal", "Base system without security-tool bundles", "apt"),
-        Distro("manjaro", "Manjaro ARM Minimal", "ARM-focused minimal base", "pacman"),
-        Distro("gentoo", "Gentoo Minimal", "Customisable source-based base", "emerge"),
-        Distro("opensuse", "openSUSE Minimal", "Minimal ARM64 command-line system", "zypper"),
-        Distro("rocky", "Rocky Linux Minimal", "Minimal enterprise-style base", "dnf"),
-        Distro("buildroot", "Buildroot", "Custom embedded Linux root filesystem", "custom")
+        Distro("debian", "Debian Minimal", "Debian Trixie ARM64 container root filesystem", "apt", "debian/trixie/arm64/default"),
+        Distro("ubuntu", "Ubuntu Minimal", "Ubuntu Noble ARM64 container root filesystem", "apt", "ubuntu/noble/arm64/default"),
+        Distro("arch", "Arch Linux ARM", "Arch Linux ARM64 container root filesystem", "pacman", "archlinux/current/arm64/default"),
+        Distro("fedora", "Fedora Minimal", "Fedora 44 ARM64 container root filesystem", "dnf", "fedora/44/arm64/default"),
+        Distro("void", "Void Linux", "Void Linux ARM64 container root filesystem", "xbps", "voidlinux/current/arm64/default"),
+        Distro("kali", "Kali Linux Minimal", "Kali rolling ARM64 container root filesystem", "apt", "kali/current/arm64/default"),
+        Distro("nixos", "NixOS Minimal", "NixOS ARM64 container root filesystem", "nix", "nixos/26.05/arm64/default"),
+        Distro("gentoo", "Gentoo Minimal", "Gentoo ARM64 OpenRC container root filesystem", "emerge", "gentoo/current/arm64/openrc"),
+        Distro("opensuse", "openSUSE Minimal", "openSUSE Tumbleweed ARM64 container root filesystem", "zypper", "opensuse/tumbleweed/arm64/default"),
+        Distro("rocky", "Rocky Linux Minimal", "Rocky Linux 9 ARM64 container root filesystem", "dnf", "rockylinux/9/arm64/default"),
+        Distro("openwrt", "OpenWrt Minimal", "OpenWrt ARM64 command-line root filesystem", "opkg", "openwrt/25.12/arm64/default"),
+        Distro("mt-ubuntu", "Existing MT-OS Ubuntu", "Existing MT-OS Ubuntu environment with Phosh/Phoc preserved", "apt")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
