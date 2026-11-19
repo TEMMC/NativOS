@@ -10,7 +10,7 @@
         android:theme="@style/Theme.MTGnome"
         android:supportsRtl="true"
         android:resizeableActivity="true">
-        <activity android:name=".TerminalActivity" android:exported="false" android:label="MT-OS Terminal" />
+        <activity android:name=".TerminalActivity" android:exported="false" android:label="Terminal" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".GnomeHomeActivity"
             android:exported="true"
