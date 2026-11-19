@@ -31,6 +31,7 @@ class TerminalActivity : Activity() {
     private lateinit var scroll: ScrollView
     private lateinit var content: LinearLayout
     private var busy = false
+    private var pendingDesktop: String? = null
 
     private data class Desktop(val name: String, val subtitle: String, val pkg: String, val weight: String, val note: String)
     private val desktops = listOf(
@@ -161,7 +162,6 @@ class TerminalActivity : Activity() {
         AlertDialog.Builder(this)
             .setView(panel)
             .setNegativeButton("Not now", null)
-            .setNeutralButton("Installed desktop", null)
             .show()
     }
 
@@ -176,7 +176,7 @@ class TerminalActivity : Activity() {
 
     private fun installDesktop(desktop: Desktop) {
         if (busy) return
-        prefs.edit().putString("selected_desktop", desktop.name).apply()
+        pendingDesktop = desktop.name
         append("\n\$ Installing ${desktop.name}…\n")
         runRootfs("export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y --no-install-recommends ${desktop.pkg}")
     }
@@ -213,7 +213,14 @@ class TerminalActivity : Activity() {
                     }
                 }
                 val code = process.waitFor()
-                runOnUiThread { append("[process exited: $code]\n") }
+                runOnUiThread {
+                    append("[process exited: $code]\\n")
+                    if (code == 0 && pendingDesktop != null) {
+                        prefs.edit().putString("selected_desktop", pendingDesktop).apply()
+                        append("[" + pendingDesktop + " installation completed successfully]\\n")
+                    }
+                    pendingDesktop = null
+                }
             } catch (e: Exception) {
                 runOnUiThread { append("[terminal error] ${e.message}\n") }
             } finally {
