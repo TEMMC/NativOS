@@ -2,6 +2,9 @@ package com.mt.gnome
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.ProgressDialog
+import android.content.pm.ActivityInfo
+import android.view.KeyEvent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -36,6 +39,9 @@ class TerminalActivity : Activity() {
     private lateinit var scroll: ScrollView
     private var busy = false
     private var active: String? = null
+    private var installProgress: ProgressDialog? = null
+    private val commandHistory = mutableListOf<String>()
+    private var historyIndex = 0
 
     private data class Distro(val id: String, val name: String, val summary: String, val manager: String, val imagePath: String? = null)
     private val distros = listOf(
@@ -51,12 +57,16 @@ class TerminalActivity : Activity() {
         Distro("opensuse", "openSUSE Minimal", "openSUSE Tumbleweed ARM64 container root filesystem", "zypper", "opensuse/tumbleweed/arm64/default"),
         Distro("rocky", "Rocky Linux Minimal", "Rocky Linux 9 ARM64 container root filesystem", "dnf", "rockylinux/9/arm64/default"),
         Distro("openwrt", "OpenWrt Minimal", "OpenWrt ARM64 command-line root filesystem", "opkg", "openwrt/25.12/arm64/default"),
-        Distro("mt-ubuntu", "Existing MT-OS Ubuntu", "Existing MT-OS Ubuntu environment with Phosh/Phoc preserved", "apt")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         active = prefs.getString("active_distro", null)
+        requestedOrientation = when (getSharedPreferences("mt_gnome", MODE_PRIVATE).getString("orientation", "landscape")) {
+            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            "system" -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
         buildUi()
         val id = active
         if (id != null && exists(id)) append("Terminal ready — ${name(id)}. Type help.\n")
@@ -64,7 +74,7 @@ class TerminalActivity : Activity() {
     }
 
     private fun name(id: String) = distros.firstOrNull { it.id == id }?.name ?: id
-    private fun root(id: String) = when (id) { "alpine" -> alpineRoot; "mt-ubuntu" -> ubuntuRoot; else -> "/data/local/mt-os/distros/$id" }
+    private fun root(id: String) = when (id) { "alpine" -> alpineRoot; else -> "/data/local/mt-os/distros/$id" }
     private fun exists(id: String): Boolean {
         val p = root(id)
         if (p.isEmpty()) return false
@@ -124,12 +134,12 @@ class TerminalActivity : Activity() {
         val inner = ScrollView(this)
         distros.forEach { d ->
             val installed = exists(d.id)
-            val state = when { installed -> "INSTALLED • OPEN"; d.id == "alpine" -> "OFFICIAL DOWNLOAD"; d.id == "mt-ubuntu" -> "EXISTING MT-OS"; else -> "ARM64 DOWNLOAD" }
+            val state = when { installed -> "INSTALLED • OPEN"; d.id == "alpine" -> "OFFICIAL DOWNLOAD"; else -> "ARM64 DOWNLOAD" }
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = rounded(Color.rgb(34, 42, 58), 12)
                 setOnClickListener {
-                    when { installed -> select(d.id); d.id == "alpine" -> confirmAlpine(); d.id == "mt-ubuntu" -> selectUbuntu(); else -> confirmLxc(d) }
+                    when { installed -> select(d.id); d.id == "alpine" -> confirmAlpine(); else -> confirmLxc(d) }
                 }
             }
             card.addView(TextView(this).apply { text = "${d.name}   ·   $state"; textSize = 14f
@@ -257,13 +267,6 @@ class TerminalActivity : Activity() {
                 runOnUiThread { append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
             } finally { archive?.delete(); tarFile?.delete() }
         }.start()
-    }
-
-    private fun selectUbuntu() {
-        AlertDialog.Builder(this).setTitle("Use existing MT-OS Ubuntu?")
-            .setMessage("Open the existing MT-OS Ubuntu root filesystem without replacing its installed Phosh/Phoc environment.")
-            .setPositiveButton("Open Ubuntu") { _, _ -> if (exists("mt-ubuntu")) select("mt-ubuntu") else Toast.makeText(this, "Existing Ubuntu rootfs not found.", Toast.LENGTH_LONG).show() }
-            .setNegativeButton("Cancel", null).show()
     }
 
     private fun unavailable(d: Distro) {
