@@ -70,7 +70,7 @@ Java_com_mt_gnome_TerminalActivity_nativeResizePty(JNIEnv *, jobject, jint fd, j
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_mt_gnome_TerminalActivity_nativeClosePty(JNIEnv *, jobject, jint fd, jint pid) {
-    if (fd >= 0) close(fd);
+    (void)fd; // ParcelFileDescriptor owns and closes the PTY master.
     if (pid > 0) {
         kill(pid, SIGHUP);
         int status = 0;
