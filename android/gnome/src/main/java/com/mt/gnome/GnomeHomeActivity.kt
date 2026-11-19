@@ -37,11 +37,11 @@ class GnomeHomeActivity : Activity() {
     private lateinit var resolution: TextView
     private lateinit var rootStatus: TextView
     private var apps: List<ResolveInfo> = emptyList()
-    private var themeName = "Aurora"
+    private var wallpaperName = "Aurora"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        themeName = prefs.getString("theme", "Aurora") ?: "Aurora"
+        wallpaperName = prefs.getString("wallpaper", prefs.getString("theme", "Aurora")) ?: "Aurora"
         applyOrientationPreference()
         window.statusBarColor = Color.rgb(30, 30, 36)
         window.navigationBarColor = Color.rgb(30, 30, 36)
@@ -83,10 +83,13 @@ class GnomeHomeActivity : Activity() {
         )
     }
 
-    private fun palette(): IntArray = when (themeName) {
-        "Emerald" -> intArrayOf(Color.rgb(12, 78, 74), Color.rgb(17, 48, 63), Color.rgb(18, 25, 40))
-        "Midnight" -> intArrayOf(Color.rgb(49, 57, 91), Color.rgb(28, 35, 61), Color.rgb(17, 21, 37))
-        else -> intArrayOf(Color.rgb(74, 55, 132), Color.rgb(39, 49, 91), Color.rgb(17, 21, 37))
+    // Five built-in desktop wallpapers. Each is rendered locally; no network download is needed.
+    private fun palette(): IntArray = when (wallpaperName) {
+        "Emerald" -> intArrayOf(Color.rgb(8, 112, 91), Color.rgb(9, 62, 74), Color.rgb(8, 28, 43))
+        "Midnight" -> intArrayOf(Color.rgb(61, 65, 120), Color.rgb(32, 39, 78), Color.rgb(10, 16, 38))
+        "Sunset" -> intArrayOf(Color.rgb(190, 77, 86), Color.rgb(112, 48, 104), Color.rgb(37, 28, 68))
+        "Arctic" -> intArrayOf(Color.rgb(35, 139, 178), Color.rgb(32, 91, 143), Color.rgb(20, 42, 86))
+        else -> intArrayOf(Color.rgb(105, 70, 176), Color.rgb(54, 66, 135), Color.rgb(17, 25, 61))
     }
 
     private fun buildDesktop() {
@@ -340,16 +343,34 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun showAppearance() {
-        val options = arrayOf("Aurora wallpaper", "Emerald wallpaper", "Midnight wallpaper", "Screen orientation", "Display resolution")
+        val options = arrayOf("Change wallpaper", "Screen orientation", "Display resolution")
         AlertDialog.Builder(this).setTitle("Desktop settings").setItems(options) { _, which ->
-            if (which == 3) showOrientationSettings() else if (which == 4) showResolutionSettings() else {
-                themeName = when (which) { 1 -> "Emerald"; 2 -> "Midnight"; else -> "Aurora" }
-                prefs.edit().putString("theme", themeName).apply()
-                buildDesktop()
-                renderApps()
-                toast("$themeName desktop applied")
+            when (which) {
+                0 -> showWallpaperPicker()
+                1 -> showOrientationSettings()
+                2 -> showResolutionSettings()
             }
         }.setNegativeButton("Close", null).show()
+    }
+
+    private fun showWallpaperPicker() {
+        val wallpapers = arrayOf("Aurora", "Emerald", "Midnight", "Sunset", "Arctic")
+        val selected = wallpapers.indexOf(wallpaperName).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Choose desktop wallpaper")
+            .setSingleChoiceItems(wallpapers, selected) { dialog, which ->
+                wallpaperName = wallpapers[which]
+                prefs.edit()
+                    .putString("wallpaper", wallpaperName)
+                    .putString("theme", wallpaperName)
+                    .apply()
+                buildDesktop()
+                renderApps()
+                dialog.dismiss()
+                toast("$wallpaperName wallpaper applied")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showOrientationSettings() {
