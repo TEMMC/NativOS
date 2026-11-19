@@ -82,45 +82,108 @@ class TerminalActivity : Activity() {
     }
 
     private fun buildUi() {
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        window.statusBarColor = Color.rgb(18, 22, 31)
+        window.navigationBarColor = Color.rgb(18, 22, 31)
         val base = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            setBackgroundColor(Color.rgb(13, 17, 25))
+            setPadding(dp(12), dp(8), dp(12), dp(10))
+            setBackgroundColor(Color.rgb(17, 20, 29))
         }
-        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        bar.addView(TextView(this).apply {
-            text = "MT-OS  /  TERMINAL"; textSize = 16f; setTextColor(Color.WHITE)
+        val titleBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(5), 0, dp(4), 0)
+            background = rounded(Color.rgb(31, 36, 49), 10)
+        }
+        titleBar.addView(TextView(this).apply {
+            text = "●  ●  ●"; textSize = 12f; setTextColor(Color.rgb(231, 133, 137))
+            setPadding(dp(8), 0, dp(12), 0)
+        })
+        titleBar.addView(TextView(this).apply {
+            text = "Terminal"; textSize = 14f; setTextColor(Color.WHITE)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
-        bar.addView(btn("DISTROS") { showCatalogue() })
-        bar.addView(btn("CLEAR") { output.text = "" })
-        base.addView(bar)
+        titleBar.addView(btn("⋮") { showTerminalMenu() })
+        base.addView(titleBar)
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(4))
+        }
+        toolbar.addView(btn("Distros") { showCatalogue() })
+        toolbar.addView(btn("Clear") { output.text = "" })
+        toolbar.addView(btn("Help") { append("\nCommands: help, clear, exit. Install tools with your distro package manager.\n") })
+        base.addView(toolbar)
         base.addView(TextView(this).apply {
-            text = "MINIMAL LINUX  •  COMMAND-LINE ONLY"; textSize = 10f
-            setTextColor(Color.rgb(111, 194, 168)); setPadding(0, 0, 0, dp(10))
+            text = "LINUX SHELL  •  ARM64"
+            textSize = 10f; letterSpacing = 0.08f
+            setTextColor(Color.rgb(113, 205, 170))
+            setPadding(dp(4), dp(3), 0, dp(5))
         })
         scroll = ScrollView(this).apply {
-            isFillViewport = true; background = rounded(Color.rgb(7, 11, 17), 12)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            isFillViewport = true
+            isVerticalScrollBarEnabled = true
+            scrollbarStyle = View.SCROLLBARS_INSIDE_INSET
+            background = rounded(Color.rgb(8, 11, 17), 9)
+            setPadding(dp(13), dp(12), dp(13), dp(12))
         }
         output = TextView(this).apply {
-            text = "MT-OS Terminal [0.4]\n"; textSize = 12f; typeface = Typeface.MONOSPACE
-            setTextColor(Color.rgb(218, 229, 239)); setTextIsSelectable(true)
+            text = "MT Terminal  •  ready\n"; textSize = 13f
+            typeface = Typeface.create("monospace", Typeface.NORMAL)
+            setTextColor(Color.rgb(218, 228, 240))
+            setTextIsSelectable(true)
+            setLineSpacing(dp(2).toFloat(), 1.04f)
         }
         scroll.addView(output)
-        base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, 0) }
-        input = EditText(this).apply {
-            hint = "Enter a Linux command…"; setHintTextColor(Color.GRAY); setTextColor(Color.WHITE)
-            textSize = 13f; setSingleLine(true); imeOptions = EditorInfo.IME_ACTION_SEND
-            setPadding(dp(12), 0, dp(12), 0); background = rounded(Color.rgb(30, 38, 51), 10)
-            setOnEditorActionListener { _, a, _ -> if (a == EditorInfo.IME_ACTION_SEND) { runCommand(); true } else false }
+        base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
+        val prompt = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(5), 0)
+            background = rounded(Color.rgb(29, 35, 48), 9)
         }
-        row.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
-        row.addView(btn("RUN") { runCommand() }.apply { setTextColor(Color.WHITE); background = rounded(Color.rgb(92, 75, 180), 10) },
-            LinearLayout.LayoutParams(dp(72), dp(46)).apply { leftMargin = dp(8) })
-        base.addView(row)
+        prompt.addView(TextView(this).apply {
+            text = "❯"; textSize = 18f; setTextColor(Color.rgb(111, 220, 170))
+            setPadding(dp(5), 0, dp(7), 0)
+        })
+        input = EditText(this).apply {
+            hint = "Run a command…"; setHintTextColor(Color.rgb(125, 135, 153)); setTextColor(Color.WHITE)
+            textSize = 13f; typeface = Typeface.MONOSPACE
+            setSingleLine(true); imeOptions = EditorInfo.IME_ACTION_SEND
+            setPadding(dp(3), 0, dp(3), 0); background = null
+            setOnEditorActionListener { _, action, _ ->
+                if (action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) { runCommand(); true } else false
+            }
+            setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP && commandHistory.isNotEmpty()) {
+                    historyIndex = (historyIndex - 1).coerceAtLeast(0)
+                    setText(commandHistory[historyIndex]); setSelection(text.length); true
+                } else if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN && commandHistory.isNotEmpty()) {
+                    historyIndex = (historyIndex + 1).coerceAtMost(commandHistory.size)
+                    setText(if (historyIndex == commandHistory.size) "" else commandHistory[historyIndex])
+                    setSelection(text.length); true
+                } else false
+            }
+        }
+        prompt.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
+        prompt.addView(btn("Run") { runCommand() }.apply {
+            setTextColor(Color.WHITE); background = rounded(Color.rgb(87, 105, 190), 8)
+        }, LinearLayout.LayoutParams(dp(64), dp(40)))
+        base.addView(prompt, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         setContentView(base)
+    }
+
+    private fun showTerminalMenu() {
+        AlertDialog.Builder(this).setTitle("Terminal")
+            .setItems(arrayOf("Choose distribution", "Clear terminal", "Terminal help", "Close terminal")) { _, which ->
+                when (which) {
+                    0 -> showCatalogue()
+                    1 -> output.text = ""
+                    2 -> append("\nCommands: help, clear, exit. Install tools with apk, apt, dnf, pacman, etc.\n")
+                    3 -> finish()
+                }
+            }.show()
     }
 
     private fun showCatalogue() {
