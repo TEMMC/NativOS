@@ -6,9 +6,12 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.ResolveInfo
 import android.content.res.Configuration
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Point
 import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
@@ -83,20 +86,38 @@ class GnomeHomeActivity : Activity() {
         )
     }
 
-    // Five built-in desktop wallpapers. Each is rendered locally; no network download is needed.
-    private fun palette(): IntArray = when (wallpaperName) {
-        "Emerald" -> intArrayOf(Color.rgb(8, 112, 91), Color.rgb(9, 62, 74), Color.rgb(8, 28, 43))
-        "Midnight" -> intArrayOf(Color.rgb(61, 65, 120), Color.rgb(32, 39, 78), Color.rgb(10, 16, 38))
-        "Sunset" -> intArrayOf(Color.rgb(190, 77, 86), Color.rgb(112, 48, 104), Color.rgb(37, 28, 68))
-        "Arctic" -> intArrayOf(Color.rgb(35, 139, 178), Color.rgb(32, 91, 143), Color.rgb(20, 42, 86))
-        else -> intArrayOf(Color.rgb(105, 70, 176), Color.rgb(54, 66, 135), Color.rgb(17, 25, 61))
+    // Nature photographs are bundled into the APK, so wallpaper switching works offline.
+    private fun wallpaperBackground(): Drawable {
+        val imageName = when (wallpaperName) {
+            "Forest" -> "forest.jpg"
+            "Mountain Peaks" -> "mountain_peaks.jpg"
+            "Tropical Beach" -> "tropical_beach.jpg"
+            "Open Landscape" -> "open_landscape.jpg"
+            else -> "mountain_lake.jpg"
+        }
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            assets.open("wallpapers/$imageName").use { BitmapFactory.decodeStream(it, null, bounds) }
+            val targetW = resources.displayMetrics.widthPixels.coerceAtLeast(1)
+            val targetH = resources.displayMetrics.heightPixels.coerceAtLeast(1)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= targetW && bounds.outHeight / (sample * 2) >= targetH) sample *= 2
+            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = assets.open("wallpapers/$imageName").use { BitmapFactory.decodeStream(it, null, options) }
+                ?: throw IllegalStateException("Wallpaper image could not be decoded")
+            BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
+        } catch (_: Exception) {
+            GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(
+                Color.rgb(35, 55, 78), Color.rgb(12, 24, 42)
+            ))
+        }
     }
 
     private fun buildDesktop() {
         desktop = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(7), dp(10), dp(8))
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, palette())
+            background = wallpaperBackground()
         }
 
         // GNOME-style top bar
@@ -354,7 +375,7 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun showWallpaperPicker() {
-        val wallpapers = arrayOf("Aurora", "Emerald", "Midnight", "Sunset", "Arctic")
+        val wallpapers = arrayOf("Mountain Lake", "Forest", "Mountain Peaks", "Tropical Beach", "Open Landscape")
         val selected = wallpapers.indexOf(wallpaperName).coerceAtLeast(0)
         AlertDialog.Builder(this)
             .setTitle("Choose desktop wallpaper")
