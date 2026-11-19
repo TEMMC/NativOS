@@ -29,7 +29,6 @@ import org.tukaani.xz.XZInputStream
 /** Minimal ARM64 Linux catalogue and terminal. No desktop environments are installed. */
 class TerminalActivity : Activity() {
     private val alpineRoot = "/data/local/mt-os/distros/alpine"
-    private val ubuntuRoot = "/data/user/0/com.mt.os/files/rootfs"
     private val alpineVersion = "3.24.4"
     private val archiveName = "alpine-minirootfs-$alpineVersion-aarch64.tar.gz"
     private val alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/releases/aarch64/"
@@ -232,16 +231,17 @@ class TerminalActivity : Activity() {
                 val checksumText = fetchText(url + ".sha256")
                 val expected = Regex("(?i)\\b[0-9a-f]{64}\\b").find(checksumText)?.value
                     ?: error("Official SHA-256 file did not contain a digest")
-                archive = File(cacheDir, archiveName)
-                download(url, archive) { done, total -> updateInstallProgress("Downloading Alpine", done, total) }
+                val archiveFile = File(cacheDir, archiveName)
+                archive = archiveFile
+                download(url, archiveFile) { done, total -> updateInstallProgress("Downloading Alpine", done, total) }
                 runOnUiThread { updateInstallPhase("Verifying archive checksum…"); append("[Download complete. Verifying SHA-256…]\n") }
-                val actual = sha256(archive)
+                val actual = sha256(archiveFile)
                 if (!actual.equals(expected, true)) { archive.delete(); throw SecurityException("Checksum mismatch; archive deleted.") }
                 runOnUiThread { updateInstallPhase("Extracting root filesystem…"); append("[Checksum verified. Extracting minimal root filesystem…]\n") }
-                val a = archive.absolutePath
+                val a = archiveFile.absolutePath
                 val script = "set -e; mkdir -p '$alpineRoot'; tar -xzf '$a' -C '$alpineRoot'; mkdir -p '$alpineRoot/dev' '$alpineRoot/proc' '$alpineRoot/sys' '$alpineRoot/run'; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$alpineRoot/etc/resolv.conf'; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > '$alpineRoot/etc/apk/repositories'; test -x '$alpineRoot/bin/sh'"
                 val result = rootExec(script)
-                archive.delete()
+                archiveFile.delete()
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
                 runOnUiThread {
                     active = "alpine"; prefs.edit().putString("active_distro", "alpine").apply()
@@ -359,18 +359,20 @@ class TerminalActivity : Activity() {
                 val sums = fetchText(buildUrl + "SHA256SUMS")
                 val expected = Regex("(?im)^([0-9a-f]{64})\\s+\\*?rootfs\\.tar\\.xz\\s*$").find(sums)?.groupValues?.get(1)
                     ?: error("Published SHA256SUMS does not include rootfs.tar.xz")
-                archive = File(cacheDir, "${d.id}-rootfs.tar.xz")
-                tarFile = File(cacheDir, "${d.id}-rootfs.tar")
+                val archiveFile = File(cacheDir, "${d.id}-rootfs.tar.xz")
+                val tarOutput = File(cacheDir, "${d.id}-rootfs.tar")
+                archive = archiveFile
+                tarFile = tarOutput
                 runOnUiThread { updateInstallPhase("Downloading ${d.name} rootfs…") }
-                download(buildUrl + "rootfs.tar.xz", archive) { done, total -> updateInstallProgress("Downloading ${d.name}", done, total) }
+                download(buildUrl + "rootfs.tar.xz", archiveFile) { done, total -> updateInstallProgress("Downloading ${d.name}", done, total) }
                 runOnUiThread { updateInstallPhase("Verifying published SHA-256…"); append("[Verifying published SHA-256…]\n") }
-                if (!sha256(archive).equals(expected, true)) throw SecurityException("SHA-256 mismatch; archive rejected")
+                if (!sha256(archiveFile).equals(expected, true)) throw SecurityException("SHA-256 mismatch; archive rejected")
                 runOnUiThread { updateInstallPhase("Checksum verified. Decompressing rootfs…"); append("[Checksum verified. Decompressing rootfs…]\n") }
-                XZInputStream(archive.inputStream().buffered()).use { xz ->
-                    tarFile.outputStream().buffered().use { out -> xz.copyTo(out) }
+                XZInputStream(archiveFile.inputStream().buffered()).use { xz ->
+                    tarOutput.outputStream().buffered().use { out -> xz.copyTo(out) }
                 }
                 runOnUiThread { updateInstallPhase("Extracting and preparing Linux filesystem…") }
-                val a = tarFile.absolutePath
+                val a = tarOutput.absolutePath
                 val script = "set -e; rm -rf '$staging'; mkdir -p '$staging'; tar -xpf '$a' -C '$staging'; test -x '$staging/bin/sh'; mkdir -p '$staging/dev' '$staging/proc' '$staging/sys' '$staging/run'; if [ -e '$staging/etc/resolv.conf' ]; then rm -f '$staging/etc/resolv.conf'; fi; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$staging/etc/resolv.conf'; rm -rf '$target'; mv '$staging' '$target'; test -x '$target/bin/sh'"
                 val result = rootExec(script)
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
@@ -396,7 +398,7 @@ class TerminalActivity : Activity() {
         if (busy) return
         val cmd = input.text.toString().trim()
         if (cmd.isEmpty()) return
-        input.text.clear(); append("\n\$ $cmd\n")
+        input.text.clear(); commandHistory.add(cmd); historyIndex = commandHistory.size; append("\n\$ $cmd\n")
         if (cmd == "help") { append("Run commands inside the selected minimal Linux distribution. Alpine: apk update, apk add <package>. Common: pwd, ls, uname -a, df -h, free -h, whoami, exit. No desktop installer.\n"); return }
         if (cmd == "clear") { output.text = ""; return }
         if (cmd == "exit") { finish(); return }
