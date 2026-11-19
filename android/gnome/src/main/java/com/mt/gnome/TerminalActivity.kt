@@ -20,7 +20,8 @@ import java.io.File
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.MessageDigest\nimport org.tukaani.xz.XZInputStream
+import java.security.MessageDigest
+import org.tukaani.xz.XZInputStream
 
 /** Minimal ARM64 Linux catalogue and terminal. No desktop environments are installed. */
 class TerminalActivity : Activity() {
