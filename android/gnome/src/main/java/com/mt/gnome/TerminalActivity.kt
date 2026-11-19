@@ -20,7 +20,7 @@ import java.io.File
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.MessageDigest
+import java.security.MessageDigest\nimport org.tukaani.xz.XZInputStream
 
 /** Minimal ARM64 Linux catalogue and terminal. No desktop environments are installed. */
 class TerminalActivity : Activity() {
@@ -62,7 +62,7 @@ class TerminalActivity : Activity() {
     }
 
     private fun name(id: String) = distros.firstOrNull { it.id == id }?.name ?: id
-    private fun root(id: String) = when (id) { "alpine" -> alpineRoot; "ubuntu" -> ubuntuRoot; else -> "" }
+    private fun root(id: String) = when (id) { "alpine" -> alpineRoot; "mt-ubuntu" -> ubuntuRoot; else -> "/data/local/mt-os/distros/$id" }
     private fun exists(id: String): Boolean {
         val p = root(id)
         if (p.isEmpty()) return false
@@ -122,12 +122,12 @@ class TerminalActivity : Activity() {
         val inner = ScrollView(this)
         distros.forEach { d ->
             val installed = exists(d.id)
-            val state = when { installed -> "INSTALLED • OPEN"; d.id == "alpine" -> "OFFICIAL DOWNLOAD"; d.id == "ubuntu" -> "EXISTING MT-OS"; else -> "COMING SOON" }
+            val state = when { installed -> "INSTALLED • OPEN"; d.id == "alpine" -> "OFFICIAL DOWNLOAD"; d.id == "mt-ubuntu" -> "EXISTING MT-OS"; else -> "ARM64 DOWNLOAD" }
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = rounded(Color.rgb(34, 42, 58), 12)
                 setOnClickListener {
-                    when { installed -> select(d.id); d.id == "alpine" -> confirmAlpine(); d.id == "ubuntu" -> selectUbuntu(); else -> unavailable(d) }
+                    when { installed -> select(d.id); d.id == "alpine" -> confirmAlpine(); d.id == "mt-ubuntu" -> selectUbuntu(); else -> confirmLxc(d) }
                 }
             }
             card.addView(TextView(this).apply { text = "${d.name}   ·   $state"; textSize = 14f
@@ -206,10 +206,61 @@ class TerminalActivity : Activity() {
         append("\n[Switched to ${name(id)}]\n"); runLinux("cat /etc/os-release; id")
     }
 
+    private fun confirmLxc(d: Distro) {
+        AlertDialog.Builder(this).setTitle("Download ${d.name}?")
+            .setMessage("Download the latest ARM64 root filesystem from the Linux Containers image server. MT Terminal verifies the published SHA-256 checksum before extracting it into an isolated directory. This is a minimal command-line container rootfs, not a bootable phone image. No desktop environment is installed.")
+            .setPositiveButton("Download and install") { _, _ -> installLxc(d) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun installLxc(d: Distro) {
+        val imagePath = d.imagePath ?: return
+        if (busy) return
+        busy = true; input.isEnabled = false
+        append("\\n[Finding latest ARM64 ${d.name} rootfs…]\\n")
+        Thread {
+            var archive: File? = null
+            var tarFile: File? = null
+            val target = root(d.id)
+            val staging = "$target.installing"
+            try {
+                val base = "https://images.linuxcontainers.org/images/$imagePath/"
+                val listing = fetchText(base)
+                val stamps = Regex("href=[\\\"'](20[0-9]{6}_[0-9]{2}:[0-9]{2}/)[\\\"']").findAll(listing).map { it.groupValues[1] }.toList().sorted()
+                val stamp = stamps.lastOrNull() ?: error("No published ARM64 build found for this distribution")
+                val buildUrl = base + stamp
+                val sums = fetchText(buildUrl + "SHA256SUMS")
+                val expected = Regex("(?im)^([0-9a-f]{64})\\\\s+\\\\*?rootfs\\\\.tar\\\\.xz\\\\s*$").find(sums)?.groupValues?.get(1)
+                    ?: error("Published SHA256SUMS does not include rootfs.tar.xz")
+                archive = File(cacheDir, "${d.id}-rootfs.tar.xz")
+                tarFile = File(cacheDir, "${d.id}-rootfs.tar")
+                download(buildUrl + "rootfs.tar.xz", archive)
+                runOnUiThread { append("[Verifying published SHA-256…]\\n") }
+                if (!sha256(archive).equals(expected, true)) throw SecurityException("SHA-256 mismatch; archive rejected")
+                runOnUiThread { append("[Checksum verified. Decompressing rootfs…]\\n") }
+                XZInputStream(archive.inputStream().buffered()).use { xz ->
+                    tarFile.outputStream().buffered().use { out -> xz.copyTo(out) }
+                }
+                val a = tarFile.absolutePath
+                val script = "set -e; rm -rf '$staging'; mkdir -p '$staging'; tar -xpf '$a' -C '$staging'; test -x '$staging/bin/sh'; mkdir -p '$staging/dev' '$staging/proc' '$staging/sys' '$staging/run'; if [ -e '$staging/etc/resolv.conf' ]; then rm -f '$staging/etc/resolv.conf'; fi; printf '%s\\\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$staging/etc/resolv.conf'; rm -rf '$target'; mv '$staging' '$target'; test -x '$target/bin/sh'"
+                val result = rootExec(script)
+                if (result.first != 0) error("Root extraction failed: ${result.second}")
+                runOnUiThread {
+                    active = d.id; prefs.edit().putString("active_distro", d.id).apply()
+                    append("[${d.name} installed. Opening terminal…]\\n")
+                    busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
+                }
+            } catch (e: Exception) {
+                rootExec("rm -rf '$staging'")
+                runOnUiThread { append("[Installation failed] ${e.message}\\n"); append("No distro was selected. Retry from DISTROS.\\n"); busy = false; input.isEnabled = true }
+            } finally { archive?.delete(); tarFile?.delete() }
+        }.start()
+    }
+
     private fun selectUbuntu() {
         AlertDialog.Builder(this).setTitle("Use existing MT-OS Ubuntu?")
             .setMessage("Open the existing MT-OS Ubuntu root filesystem without replacing its installed Phosh/Phoc environment.")
-            .setPositiveButton("Open Ubuntu") { _, _ -> if (exists("ubuntu")) select("ubuntu") else Toast.makeText(this, "Existing Ubuntu rootfs not found.", Toast.LENGTH_LONG).show() }
+            .setPositiveButton("Open Ubuntu") { _, _ -> if (exists("mt-ubuntu")) select("mt-ubuntu") else Toast.makeText(this, "Existing Ubuntu rootfs not found.", Toast.LENGTH_LONG).show() }
             .setNegativeButton("Cancel", null).show()
     }
 
