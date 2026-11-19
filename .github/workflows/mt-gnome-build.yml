@@ -1,0 +1,84 @@
+name: MT-GNOME Android launcher
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/mt-gnome-build.yml"
+      - "android/settings.gradle.kts"
+      - "android/gnome/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mt-gnome-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SIGNING_ENABLED: ${{ secrets.MTOS_KEYSTORE_BASE64 != '' && secrets.MTOS_KEYSTORE_PASSWORD != '' && secrets.MTOS_KEY_ALIAS != '' && secrets.MTOS_KEY_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Prepare existing NativOS release signing key
+        if: env.SIGNING_ENABLED == 'true'
+        working-directory: android
+        env:
+          MTOS_KEYSTORE_BASE64: ${{ secrets.MTOS_KEYSTORE_BASE64 }}
+          MTOS_KEYSTORE_PASSWORD: ${{ secrets.MTOS_KEYSTORE_PASSWORD }}
+          MTOS_KEY_ALIAS: ${{ secrets.MTOS_KEY_ALIAS }}
+          MTOS_KEY_PASSWORD: ${{ secrets.MTOS_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p signing
+          printf '%s' "$MTOS_KEYSTORE_BASE64" | base64 --decode > signing/mt-os-release.jks
+          chmod 600 signing/mt-os-release.jks
+          cat > signing/keystore.properties <<EOF
+          storeFile=signing/mt-os-release.jks
+          storePassword=$MTOS_KEYSTORE_PASSWORD
+          keyAlias=$MTOS_KEY_ALIAS
+          keyPassword=$MTOS_KEY_PASSWORD
+          EOF
+          chmod 600 signing/keystore.properties
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace :gnome:assembleDebug
+      - name: Build release APK with the same NativOS signing certificate
+        if: env.SIGNING_ENABLED == 'true'
+        working-directory: android
+        run: ./gradlew --no-daemon --stacktrace :gnome:assembleRelease
+      - name: Verify release signature
+        if: env.SIGNING_ENABLED == 'true'
+        working-directory: android
+        run: |
+          APK=gnome/build/outputs/apk/release/gnome-release.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MT-GNOME-debug
+          path: android/gnome/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload signed release APK
+        if: env.SIGNING_ENABLED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MT-GNOME-signed-release
+          path: android/gnome/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 90

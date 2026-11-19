@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "NativOS"
-include(":app")
+include(":app", ":gnome")
