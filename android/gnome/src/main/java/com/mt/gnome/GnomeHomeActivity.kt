@@ -51,6 +51,14 @@ class GnomeHomeActivity : Activity() {
         updateRootStatus()
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        buildDesktop()
+        renderApps()
+        updateResolution()
+        updateRootStatus()
+    }
+
     override fun onResume() {
         super.onResume()
         enterDesktopMode()
@@ -315,9 +323,7 @@ class GnomeHomeActivity : Activity() {
         if (!::resolution.isInitialized) return
         val size = Point()
         windowManager.defaultDisplay.getRealSize(size)
-        val w = maxOf(size.x, size.y)
-        val h = minOf(size.x, size.y)
-        resolution.text = "$w × $h"
+        resolution.text = "${size.x} × ${size.y}"
     }
 
     private fun updateClock() { if (::clock.isInitialized) clock.text = now() }
