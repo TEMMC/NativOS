@@ -487,7 +487,7 @@ class TerminalActivity : Activity() {
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         Thread {
             try {
-                val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color COLORTERM=truecolor HOME=/root PS1='~ $ '; chroot \"\$R\" /bin/sh -i; code=\$?; umount \"\$R/sys\" 2>/dev/null || true; umount \"\$R/proc\" 2>/dev/null || true; umount \"\$R/dev\" 2>/dev/null || true; exit \$code"
+                val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; export TERM=xterm-256color COLORTERM=truecolor HOME=/root PS1='~ $ '; cd \"\$R\"; chroot \"\$R\" /bin/sh -i"
                 val packed = nativeOpenPty(shell, 100, 30)
                 val fd = packed.toInt()
                 val pid = (packed ushr 32).toInt()
