@@ -38,7 +38,7 @@ class TerminalActivity : Activity() {
         Desktop("XFCE", "Fast, traditional Linux desktop", "xfce4", "Moderate", "Best starting point for the A04e's limited RAM"),
         Desktop("LXQt", "Lightweight Qt desktop", "lxqt", "Moderate", "Low resource use; suitable for compact devices"),
         Desktop("MATE", "Classic, full-featured desktop", "mate-desktop-environment", "Large", "Traditional panel-and-window workflow"),
-        Desktop("GNOME", "Modern GNOME desktop", "gnome-core", "Very large", "Heavy on this phone; installation may be slow"),
+        Desktop("GNOME", "Modern GNOME desktop", "gnome-session", "Very large", "Heavy on this phone; installation may be slow"),
         Desktop("KDE Plasma", "Highly customizable desktop", "kde-plasma-desktop", "Very large", "Feature-rich but demanding on phone storage and RAM"),
         Desktop("Cinnamon", "Familiar desktop layout", "cinnamon-desktop-environment", "Very large", "A full desktop stack with higher resource needs"),
         Desktop("Phosh", "Mobile-first Linux shell", "phosh", "Moderate", "Designed for touchscreens; complements MT-Phoc/Phosh work")
@@ -129,7 +129,7 @@ class TerminalActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
         })
         panel.addView(TextView(this).apply {
-            text = "Select one environment to install into the existing Debian root filesystem. Downloads require an internet connection and free storage. You can change your choice later."
+            text = "Select one environment to install into the existing Ubuntu 24.04 root filesystem. Downloads require an internet connection and free storage. You can change your choice later."
             textSize = 12f
             setTextColor(Color.LTGRAY)
             setPadding(0, dp(6), 0, dp(10))
@@ -168,7 +168,7 @@ class TerminalActivity : Activity() {
     private fun confirmInstall(desktop: Desktop) {
         AlertDialog.Builder(this)
             .setTitle("Install ${desktop.name}?")
-            .setMessage("MT-OS will run apt inside the existing Debian rootfs and install ${desktop.pkg}. This can download many packages and use substantial storage. Keep the phone connected to power and Wi-Fi. The desktop packages will be installed; launching a graphical Linux session still depends on the configured display server.")
+            .setMessage("MT-OS will run apt inside the existing Ubuntu rootfs and install ${desktop.pkg}. This can download many packages and use substantial storage. Keep the phone connected to power and Wi-Fi. The desktop packages will be installed; launching a graphical Linux session still depends on the configured display server.")
             .setPositiveButton("Download and install") { _, _ -> installDesktop(desktop) }
             .setNegativeButton("Cancel", null)
             .show()
