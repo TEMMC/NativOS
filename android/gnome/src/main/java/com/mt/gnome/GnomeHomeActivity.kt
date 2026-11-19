@@ -324,9 +324,9 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun showAppearance() {
-        val options = arrayOf("Aurora wallpaper", "Emerald wallpaper", "Midnight wallpaper", "Screen orientation")
+        val options = arrayOf("Aurora wallpaper", "Emerald wallpaper", "Midnight wallpaper", "Screen orientation", "Display resolution")
         AlertDialog.Builder(this).setTitle("Desktop settings").setItems(options) { _, which ->
-            if (which == 3) showOrientationSettings() else {
+            if (which == 3) showOrientationSettings() else if (which == 4) showResolutionSettings() else {
                 themeName = when (which) { 1 -> "Emerald"; 2 -> "Midnight"; else -> "Aurora" }
                 prefs.edit().putString("theme", themeName).apply()
                 buildDesktop()
@@ -347,6 +347,50 @@ class GnomeHomeActivity : Activity() {
                 applyOrientationPreference()
                 dialog.dismiss()
                 toast(choices[which] + " selected")
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun currentDisplaySize(): Point {
+        val size = Point()
+        windowManager.defaultDisplay.getRealSize(size)
+        return size
+    }
+
+    private fun showResolutionSettings() {
+        val size = currentDisplaySize()
+        val landscape = size.x >= size.y
+        val width = maxOf(size.x, size.y)
+        val height = minOf(size.x, size.y)
+        val presets = listOf(
+            "Native / reset (${width} × ${height})" to null,
+            "90% (${width * 9 / 10} × ${height * 9 / 10})" to Pair(width * 9 / 10, height * 9 / 10),
+            "80% (${width * 4 / 5} × ${height * 4 / 5})" to Pair(width * 4 / 5, height * 4 / 5),
+            "75% (${width * 3 / 4} × ${height * 3 / 4})" to Pair(width * 3 / 4, height * 3 / 4),
+            "67% (${width * 2 / 3} × ${height * 2 / 3})" to Pair(width * 2 / 3, height * 2 / 3)
+        )
+        AlertDialog.Builder(this).setTitle("Display resolution")
+            .setMessage("Changes Android's logical display size for the whole device. Root approval is required. The physical LCD resolution cannot be changed.")
+            .setItems(presets.map { it.first }.toTypedArray()) { _, which ->
+                val chosen = presets[which].second
+                val command = if (chosen == null) "wm size reset" else {
+                    val w = if (landscape) chosen.first else chosen.second
+                    val h = if (landscape) chosen.second else chosen.first
+                    "wm size ${w}x${h}"
+                }
+                Thread {
+                    val result = RootWindowBridge(this).runRoot(command)
+                    runOnUiThread {
+                        if (result.contains("exit=0")) {
+                            toast(if (chosen == null) "Native display size restored" else "Logical resolution applied")
+                            desktop.postDelayed({ updateResolution(); buildDesktop(); renderApps() }, 500)
+                        } else {
+                            AlertDialog.Builder(this).setTitle("Could not change resolution")
+                                .setMessage("Allow root access to MT-GNOME in Magisk and retry.\n\n$result")
+                                .setPositiveButton("OK", null).show()
+                        }
+                    }
+                }.start()
             }.setNegativeButton("Cancel", null).show()
     }
 
@@ -376,7 +420,7 @@ class GnomeHomeActivity : Activity() {
         if (!::resolution.isInitialized) return
         val size = Point()
         windowManager.defaultDisplay.getRealSize(size)
-        resolution.text = "${size.x} × ${size.y}"
+        resolution.text = "${size.x} × ${size.y}  ⚙"\n        resolution.contentDescription = "Current logical resolution. Tap to change."\n        resolution.setOnClickListener { showResolutionSettings() }
     }
 
     private fun updateClock() { if (::clock.isInitialized) clock.text = now() }
