@@ -71,6 +71,7 @@ class TerminalActivity : Activity() {
 
     companion object {
         @Volatile var overlayContent: View? = null
+        @Volatile var hostActivity: TerminalActivity? = null
         init { System.loadLibrary("mtpty") }
     }
     private external fun nativeOpenPty(command: String, columns: Int, rows: Int): Long
@@ -805,6 +806,7 @@ class TerminalActivity : Activity() {
 
     override fun onDestroy() {
         overlayContent = null
+        hostActivity = null
         stopService(Intent(this, FloatingTerminalService::class.java))
         closeAllSessions()
         super.onDestroy()
