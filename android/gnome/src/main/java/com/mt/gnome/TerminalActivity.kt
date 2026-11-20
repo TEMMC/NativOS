@@ -13,6 +13,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -48,6 +49,12 @@ class TerminalActivity : Activity() {
     private var busy = false
     private var active: String? = null
     private var installProgress: ProgressDialog? = null
+    private var windowX = 0
+    private var windowY = 0
+    private var windowWidth = 0
+    private var windowHeight = 0
+    private var maximized = false
+    private var restoreBounds = intArrayOf(0, 0, 0, 0)
     private val commandHistory = mutableListOf<String>()
     private var historyIndex = 0
     private data class ShellSession(
@@ -93,10 +100,12 @@ class TerminalActivity : Activity() {
         }
         buildUi()
         window.setBackgroundDrawableResource(android.R.color.transparent)
-        window.setLayout((resources.displayMetrics.widthPixels * 0.94f).toInt(), (resources.displayMetrics.heightPixels * 0.88f).toInt())
-        window.setGravity(Gravity.CENTER)
+        windowWidth = (resources.displayMetrics.widthPixels * 0.94f).toInt()
+        windowHeight = (resources.displayMetrics.heightPixels * 0.82f).toInt()
+        windowX = (resources.displayMetrics.widthPixels - windowWidth) / 2
+        windowY = (resources.displayMetrics.heightPixels - windowHeight) / 2
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        window.attributes = window.attributes.apply { dimAmount = 0.42f }
+        applyWindowBounds()
         val id = active
         if (id != null && exists(id)) startSession(id)
         else { active = null; showCatalogue() }
@@ -133,10 +142,24 @@ class TerminalActivity : Activity() {
             text = "●  ●  ●"; textSize = 12f; setTextColor(Color.rgb(231, 133, 137))
             setPadding(dp(8), 0, dp(12), 0)
         })
-        titleBar.addView(TextView(this).apply {
-            text = "Terminal"; textSize = 14f; setTextColor(Color.WHITE)
+        val title = TextView(this).apply {
+            text = "MT Terminal"; textSize = 14f; setTextColor(Color.WHITE)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        }, LinearLayout.LayoutParams(0, dp(42), 1f))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
+            setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> { dragStart(event.rawX, event.rawY); true }
+                    MotionEvent.ACTION_MOVE -> { dragWindow(event.rawX, event.rawY); true }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                    else -> false
+                }
+            }
+        }
+        titleBar.addView(title, LinearLayout.LayoutParams(0, dp(42), 1f))
+        titleBar.addView(btn("—") { moveTaskToBack(true) })
+        titleBar.addView(btn("□") { toggleMaximize() })
+        titleBar.addView(btn("×") { finish() })
         titleBar.addView(btn("⋮") { showTerminalMenu() })
         base.addView(titleBar)
         val toolbar = LinearLayout(this).apply {
@@ -230,7 +253,89 @@ class TerminalActivity : Activity() {
         output.setOnClickListener { focusTerminalInput() }
         output.setOnLongClickListener { copyTerminalSelection(); true }
         base.addView(input, LinearLayout.LayoutParams(dp(1), dp(1)))
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(0, dp(3), dp(2), 0)
+        }
+        bottomBar.addView(TextView(this).apply {
+            text = "↘"; textSize = 19f; setTextColor(Color.rgb(145, 158, 180))
+            gravity = Gravity.CENTER
+            contentDescription = "Drag to resize terminal window"
+            setPadding(dp(12), dp(2), dp(8), dp(2))
+            setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> { resizeStart(event.rawX, event.rawY); true }
+                    MotionEvent.ACTION_MOVE -> { resizeWindow(event.rawX, event.rawY); true }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                    else -> false
+                }
+            }
+        })
+        base.addView(bottomBar, LinearLayout.LayoutParams(-1, dp(28)))
         setContentView(base)
+    }
+
+    private var gestureStartX = 0f
+    private var gestureStartY = 0f
+    private var gestureWindowX = 0
+    private var gestureWindowY = 0
+    private var gestureWindowWidth = 0
+    private var gestureWindowHeight = 0
+
+    private fun applyWindowBounds() {
+        window.setGravity(Gravity.TOP or Gravity.START)
+        window.setLayout(windowWidth, windowHeight)
+        window.attributes = window.attributes.apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = windowX
+            y = windowY
+            dimAmount = 0.28f
+        }
+    }
+
+    private fun dragStart(rawX: Float, rawY: Float) {
+        if (maximized) return
+        gestureStartX = rawX; gestureStartY = rawY
+        gestureWindowX = windowX; gestureWindowY = windowY
+    }
+
+    private fun dragWindow(rawX: Float, rawY: Float) {
+        if (maximized) return
+        val metrics = resources.displayMetrics
+        windowX = (gestureWindowX + rawX - gestureStartX).toInt().coerceIn(0, (metrics.widthPixels - windowWidth).coerceAtLeast(0))
+        windowY = (gestureWindowY + rawY - gestureStartY).toInt().coerceIn(0, (metrics.heightPixels - windowHeight).coerceAtLeast(0))
+        applyWindowBounds()
+    }
+
+    private fun resizeStart(rawX: Float, rawY: Float) {
+        if (maximized) return
+        gestureStartX = rawX; gestureStartY = rawY
+        gestureWindowWidth = windowWidth; gestureWindowHeight = windowHeight
+    }
+
+    private fun resizeWindow(rawX: Float, rawY: Float) {
+        if (maximized) return
+        val metrics = resources.displayMetrics
+        windowWidth = (gestureWindowWidth + rawX - gestureStartX).toInt().coerceIn(dp(280), (metrics.widthPixels - windowX).coerceAtLeast(dp(280)))
+        windowHeight = (gestureWindowHeight + rawY - gestureStartY).toInt().coerceIn(dp(240), (metrics.heightPixels - windowY).coerceAtLeast(dp(240)))
+        applyWindowBounds()
+    }
+
+    private fun toggleMaximize() {
+        val metrics = resources.displayMetrics
+        if (!maximized) {
+            restoreBounds = intArrayOf(windowX, windowY, windowWidth, windowHeight)
+            windowX = 0; windowY = 0
+            windowWidth = metrics.widthPixels; windowHeight = metrics.heightPixels
+            maximized = true
+        } else {
+            windowX = restoreBounds[0]; windowY = restoreBounds[1]
+            windowWidth = restoreBounds[2]; windowHeight = restoreBounds[3]
+            maximized = false
+        }
+        applyWindowBounds()
+        resizePty()
     }
 
     private fun showTerminalMenu() {
