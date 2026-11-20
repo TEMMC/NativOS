@@ -207,7 +207,8 @@ class TerminalActivity : Activity() {
             typeface = Typeface.create("monospace", Typeface.NORMAL)
             setTextColor(Color.rgb(218, 228, 240))
             setTextIsSelectable(true)
-            isFocusable = false
+            isFocusable = true
+            isFocusableInTouchMode = true
             isClickable = true
             setLineSpacing(dp(2).toFloat(), 1.04f)
             setPadding(0, dp(2), 0, dp(8))
@@ -268,7 +269,6 @@ class TerminalActivity : Activity() {
             }
         }
         output.setOnClickListener { focusTerminalInput() }
-        output.setOnLongClickListener { copyTerminalSelection(); true }
         base.addView(input, LinearLayout.LayoutParams(-1, dp(2)))
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
