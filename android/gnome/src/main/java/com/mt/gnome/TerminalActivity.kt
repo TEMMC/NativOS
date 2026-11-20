@@ -2,6 +2,7 @@ package com.mt.gnome
 
 import android.app.Activity
 import android.content.ClipData
+import android.content.Intent
 import android.content.ClipboardManager
 import android.app.AlertDialog
 import android.app.ProgressDialog
@@ -633,7 +634,7 @@ class TerminalActivity : Activity() {
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         Thread {
             try {
-                val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1="root@mt-linux:\\w# "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"
+                val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1=root@mt-linux:\\w#; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"
                 val packed = nativeOpenPty(shell, 100, 30)
                 val fd = packed.toInt()
                 val pid = (packed ushr 32).toInt()
