@@ -24,6 +24,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -165,7 +166,9 @@ class TerminalActivity : Activity() {
         titleBar.addView(btn("—") { moveTaskToBack(true) })
         titleBar.addView(btn("□") { toggleMaximize() })
         titleBar.addView(btn("×") { finish() })
-        titleBar.addView(btn("⋮") { showTerminalMenu() })
+        val menuButton = btn("⋮") {}
+        menuButton.setOnClickListener { showTerminalMenu(menuButton) }
+        titleBar.addView(menuButton)
         base.addView(titleBar)
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -360,16 +363,36 @@ class TerminalActivity : Activity() {
         resizePty()
     }
 
-    private fun showTerminalMenu() {
-        AlertDialog.Builder(this).setTitle("Terminal")
-            .setItems(arrayOf("Choose distribution", "Clear terminal", "Terminal help", "Close terminal")) { _, which ->
-                when (which) {
-                    0 -> showCatalogue()
-                    1 -> output.text = ""
-                    2 -> append("\nCommands: help, clear, exit. Install tools with apk, apt, dnf, pacman, etc.\n")
-                    3 -> finish()
-                }
-            }.show()
+    private fun showTerminalMenu(anchor: View) {
+        // Use a popup attached to the overlay view; Activity dialogs are hidden behind the overlay.
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            background = rounded(Color.rgb(35, 42, 57), 12)
+        }
+        val popup = PopupWindow(panel, dp(220), -2, true).apply {
+            isOutsideTouchable = true
+            setBackgroundDrawable(rounded(Color.rgb(35, 42, 57), 12))
+            elevation = dp(12).toFloat()
+        }
+        fun item(label: String, action: () -> Unit) {
+            val row = TextView(this).apply {
+                text = label
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { popup.dismiss(); action() }
+            }
+            panel.addView(row, LinearLayout.LayoutParams(-1, -2))
+        }
+        item("Choose distribution") { showCatalogue() }
+        item("Clear terminal") { clearActiveTerminal() }
+        item("Terminal help") { append("\\nCommands: help, clear, exit. Install tools with apk, apt, dnf, pacman, etc.\\n") }
+        item("Close terminal") { finish() }
+        popup.showAsDropDown(anchor, 0, 0, Gravity.END)
     }
 
     private fun showCatalogue() {
