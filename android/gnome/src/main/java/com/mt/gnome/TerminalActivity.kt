@@ -13,6 +13,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.view.Gravity
+import android.view.WindowManager
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -88,6 +89,11 @@ class TerminalActivity : Activity() {
             else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
         buildUi()
+        window.setBackgroundDrawableResource(android.R.color.transparent)
+        window.setLayout((resources.displayMetrics.widthPixels * 0.94f).toInt(), (resources.displayMetrics.heightPixels * 0.88f).toInt())
+        window.setGravity(Gravity.CENTER)
+        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.attributes = window.attributes.apply { dimAmount = 0.42f }
         val id = active
         if (id != null && exists(id)) startSession(id)
         else { active = null; showCatalogue() }
@@ -112,7 +118,7 @@ class TerminalActivity : Activity() {
         val base = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(10))
-            setBackgroundColor(Color.rgb(17, 20, 29))
+            background = rounded(Color.rgb(17, 20, 29), 16)
         }
         val titleBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -184,12 +190,12 @@ class TerminalActivity : Activity() {
             setPadding(dp(5), 0, dp(7), 0)
         })
         input = EditText(this).apply {
-            hint = "Run a command…"; setHintTextColor(Color.rgb(125, 135, 153)); setTextColor(Color.WHITE)
+            hint = "Type a command and press Enter"; setHintTextColor(Color.rgb(125, 135, 153)); setTextColor(Color.WHITE)
             textSize = 13f; typeface = Typeface.MONOSPACE
-            setSingleLine(true); imeOptions = EditorInfo.IME_ACTION_SEND
+            setSingleLine(true); imeOptions = EditorInfo.IME_ACTION_DONE
             setPadding(dp(3), 0, dp(3), 0); background = null
             setOnEditorActionListener { _, action, _ ->
-                if (action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) { runCommand(); true } else false
+                if (action == EditorInfo.IME_ACTION_DONE || action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) { runCommand(); true } else false
             }
             setOnKeyListener { _, keyCode, event ->
                 if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP && commandHistory.isNotEmpty()) {
@@ -203,9 +209,6 @@ class TerminalActivity : Activity() {
             }
         }
         prompt.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
-        prompt.addView(btn("Run") { runCommand() }.apply {
-            setTextColor(Color.WHITE); background = rounded(Color.rgb(87, 105, 190), 8)
-        }, LinearLayout.LayoutParams(dp(64), dp(40)))
         base.addView(prompt, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         setContentView(base)
     }
