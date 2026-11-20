@@ -16,6 +16,9 @@ import android.view.Gravity
 import android.view.WindowManager
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -172,44 +175,61 @@ class TerminalActivity : Activity() {
             typeface = Typeface.create("monospace", Typeface.NORMAL)
             setTextColor(Color.rgb(218, 228, 240))
             setTextIsSelectable(true)
+            isFocusable = false
+            isClickable = true
             setLineSpacing(dp(2).toFloat(), 1.04f)
             setPadding(0, dp(2), 0, dp(8))
         }
         scroll.addView(output)
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
-        val prompt = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(5), 0)
-            background = rounded(Color.rgb(29, 35, 48), 9)
-        }
-        prompt.addView(TextView(this).apply {
-            text = "~ $"; textSize = 14f; setTextColor(Color.rgb(111, 220, 170))
-            typeface = Typeface.MONOSPACE
-            setPadding(dp(5), 0, dp(7), 0)
-        })
         input = EditText(this).apply {
-            hint = "Type a command and press Enter"; setHintTextColor(Color.rgb(125, 135, 153)); setTextColor(Color.WHITE)
-            textSize = 13f; typeface = Typeface.MONOSPACE
-            setSingleLine(true); imeOptions = EditorInfo.IME_ACTION_DONE
-            setPadding(dp(3), 0, dp(3), 0); background = null
-            setOnEditorActionListener { _, action, _ ->
-                if (action == EditorInfo.IME_ACTION_DONE || action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) { runCommand(); true } else false
-            }
-            setOnKeyListener { _, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP && commandHistory.isNotEmpty()) {
-                    historyIndex = (historyIndex - 1).coerceAtLeast(0)
-                    setText(commandHistory[historyIndex]); setSelection(text.length); true
-                } else if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN && commandHistory.isNotEmpty()) {
-                    historyIndex = (historyIndex + 1).coerceAtMost(commandHistory.size)
-                    setText(if (historyIndex == commandHistory.size) "" else commandHistory[historyIndex])
-                    setSelection(text.length); true
+            setTextColor(Color.TRANSPARENT)
+            setHintTextColor(Color.TRANSPARENT)
+            textSize = 1f
+            setSingleLine(true)
+            imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            alpha = 0.015f
+            background = null
+            isFocusable = true
+            isFocusableInTouchMode = true
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    if (count > 0) sendPty(s?.subSequence(start, start + count)?.toString() ?: "")
+                    post { text?.clear() }
+                }
+                override fun afterTextChanged(s: Editable?) {}
+            })
+            setOnEditorActionListener { _, action, event ->
+                if (event?.keyCode == KeyEvent.KEYCODE_ENTER || action == EditorInfo.IME_ACTION_DONE ||
+                    action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) {
+                    sendPty("\r"); true
                 } else false
             }
+            setOnKeyListener { _, keyCode, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                val sequence = when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_UP -> "\u001b[A"
+                    KeyEvent.KEYCODE_DPAD_DOWN -> "\u001b[B"
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> "\u001b[C"
+                    KeyEvent.KEYCODE_DPAD_LEFT -> "\u001b[D"
+                    KeyEvent.KEYCODE_TAB -> "\t"
+                    KeyEvent.KEYCODE_ESCAPE -> "\u001b"
+                    KeyEvent.KEYCODE_DEL -> "\u007f"
+                    KeyEvent.KEYCODE_ENTER -> "\r"
+                    KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\u0003" else null
+                    KeyEvent.KEYCODE_D -> if (event.isCtrlPressed) "\u0004" else null
+                    KeyEvent.KEYCODE_L -> if (event.isCtrlPressed) "\u000c" else null
+                    else -> null
+                }
+                if (sequence != null) { sendPty(sequence); true } else false
+            }
         }
-        prompt.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
-        base.addView(prompt, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        output.setOnClickListener { focusTerminalInput() }
+        output.setOnLongClickListener { copyTerminalSelection(); true }
+        base.addView(input, LinearLayout.LayoutParams(dp(1), dp(1)))
         setContentView(base)
     }
 
@@ -451,14 +471,12 @@ class TerminalActivity : Activity() {
             .setPositiveButton("OK", null).show()
     }
 
-    private fun runCommand() {
-        if (busy) return
-        val cmd = input.text.toString()
-        if (cmd.isEmpty()) return
-        input.text.clear()
-        commandHistory.add(cmd); historyIndex = commandHistory.size
-        if (cmd.trim() == "clear") { clearActiveTerminal(); sendPty("clear\n"); return }
-        sendPty(cmd + "\n")
+    private fun runCommand() { sendPty("\r") }
+
+    private fun focusTerminalInput() {
+        input.requestFocus()
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
     }
 
     private fun runLinux(command: String) {
@@ -523,7 +541,7 @@ class TerminalActivity : Activity() {
                 reader.start()
                 runOnUiThread {
                     if (activeSession === session) {
-                        busy = false; input.isEnabled = true; input.requestFocus()
+                        busy = false; input.isEnabled = true; focusTerminalInput()
                         if (initialCommand.isNotBlank()) sendSession(session, initialCommand + "\n")
                         scroll.post { resizePty() }
                     }
@@ -533,7 +551,7 @@ class TerminalActivity : Activity() {
                 runOnUiThread {
                     appendToSession(session, "[PTY startup failed] ${e.message}\n")
                     session.starting = false
-                    if (activeSession === session) { busy = false; input.isEnabled = true }
+                    if (activeSession === session) { busy = false; input.isEnabled = true; focusTerminalInput() }
                     renderSessionTabs()
                 }
             }
@@ -608,10 +626,7 @@ class TerminalActivity : Activity() {
         val clip = clipboard.primaryClip
         if (clip == null || clip.itemCount == 0) { Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show(); return }
         val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
-        val start = input.selectionStart.coerceAtLeast(0); val end = input.selectionEnd.coerceAtLeast(start)
-        input.text.replace(start, end, value)
-        input.setSelection((start + value.length).coerceAtMost(input.length()))
-        input.requestFocus()
+        sendPty(value)
     }
 
     private fun resizePty() {
