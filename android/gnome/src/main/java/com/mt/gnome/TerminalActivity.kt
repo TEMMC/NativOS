@@ -40,7 +40,7 @@ class TerminalActivity : Activity() {
     private val alpineRoot = "/data/local/mt-os/distros/alpine"
     private val alpineVersion = "3.24.4"
     private val archiveName = "alpine-minirootfs-$alpineVersion-aarch64.tar.gz"
-    private val alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/releases/aarch64/"
+    private val alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/"
     private val prefs by lazy { getSharedPreferences("mt_terminal", MODE_PRIVATE) }
     private lateinit var output: TextView
     private lateinit var input: EditText
@@ -307,7 +307,7 @@ class TerminalActivity : Activity() {
                 if (!actual.equals(expected, true)) { archive.delete(); throw SecurityException("Checksum mismatch; archive deleted.") }
                 runOnUiThread { updateInstallPhase("Extracting root filesystem…"); append("[Checksum verified. Extracting minimal root filesystem…]\n") }
                 val a = archiveFile.absolutePath
-                val script = "set -e; mkdir -p '$alpineRoot'; tar -xzf '$a' -C '$alpineRoot'; mkdir -p '$alpineRoot/dev' '$alpineRoot/proc' '$alpineRoot/sys' '$alpineRoot/run'; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$alpineRoot/etc/resolv.conf'; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > '$alpineRoot/etc/apk/repositories'; test -x '$alpineRoot/bin/sh' && test -d '$alpineRoot/usr' && test -d '$alpineRoot/etc'; printf '%s\\n' 'alpine:${alpineVersion}' > '$alpineRoot/.mt-installed'"
+                val script = "set -e; mkdir -p '$alpineRoot'; tar -xzf '$a' -C '$alpineRoot'; mkdir -p '$alpineRoot/etc/apk' '$alpineRoot/dev' '$alpineRoot/proc' '$alpineRoot/sys' '$alpineRoot/run'; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$alpineRoot/etc/resolv.conf'; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > '$alpineRoot/etc/apk/repositories'; test -x '$alpineRoot/bin/sh' && test -d '$alpineRoot/usr' && test -d '$alpineRoot/etc'; printf '%s\\n' 'alpine:${alpineVersion}' > '$alpineRoot/.mt-installed'"
                 val result = rootExec(script)
                 archiveFile.delete()
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
@@ -450,7 +450,7 @@ class TerminalActivity : Activity() {
                 }
                 runOnUiThread { updateInstallPhase("Extracting and preparing Linux filesystem…") }
                 val a = tarOutput.absolutePath
-                val script = "set -e; TARGET='$target'; STAGING='$staging'; BACKUP=\"\${TARGET}.previous\"; mkdir -p \"\${TARGET%/*}\"; rm -rf \"\$STAGING\" \"\$BACKUP\"; mkdir -p \"\$STAGING\"; tar -xpf '$a' -C \"\$STAGING\"; test -x \"\$STAGING/bin/sh\"; mkdir -p \"\$STAGING/dev\" \"\$STAGING/proc\" \"\$STAGING/sys\" \"\$STAGING/run\"; if [ -e \"\$STAGING/etc/resolv.conf\" ]; then rm -f \"\$STAGING/etc/resolv.conf\"; fi; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > \"\$STAGING/etc/resolv.conf\"; if [ -e \"\$TARGET\" ]; then mv \"\$TARGET\" \"\$BACKUP\"; fi; if mv \"\$STAGING\" \"\$TARGET\"; then rm -rf \"\$BACKUP\"; else [ ! -e \"\$BACKUP\" ] || mv \"\$BACKUP\" \"\$TARGET\"; exit 1; fi; test -x \"\$TARGET/bin/sh\" && test -f \"\$TARGET/etc/os-release\" && test -d \"\$TARGET/usr/bin\" && test -d \"\$TARGET/var\"; printf '%s\\n' '${d.id}' > \"\$TARGET/.mt-installed\""
+                val script = "set -e; TARGET='$target'; STAGING='$staging'; BACKUP=\"\${TARGET}.previous\"; mkdir -p \\"\\$STAGING/etc\\" \"\${TARGET%/*}\"; rm -rf \"\$STAGING\" \"\$BACKUP\"; mkdir -p \"\$STAGING\"; tar -xpf '$a' -C \"\$STAGING\"; test -x \"\$STAGING/bin/sh\"; mkdir -p \"\$STAGING/dev\" \"\$STAGING/proc\" \"\$STAGING/sys\" \"\$STAGING/run\"; if [ -e \"\$STAGING/etc/resolv.conf\" ]; then rm -f \"\$STAGING/etc/resolv.conf\"; fi; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > \"\$STAGING/etc/resolv.conf\"; if [ -e \"\$TARGET\" ]; then mv \"\$TARGET\" \"\$BACKUP\"; fi; if mv \"\$STAGING\" \"\$TARGET\"; then rm -rf \"\$BACKUP\"; else [ ! -e \"\$BACKUP\" ] || mv \"\$BACKUP\" \"\$TARGET\"; exit 1; fi; test -x \"\$TARGET/bin/sh\" && test -f \"\$TARGET/etc/os-release\" && test -d \"\$TARGET/usr/bin\" && test -d \"\$TARGET/var\"; printf '%s\\n' '${d.id}' > \"\$TARGET/.mt-installed\""
                 val result = rootExec(script)
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
                 runOnUiThread {
