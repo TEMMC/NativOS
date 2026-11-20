@@ -58,6 +58,7 @@ class GnomeHomeActivity : Activity() {
         loadApps()
         updateRootStatus()
         showFirstRunSetupIfNeeded()
+        if (intent.getBooleanExtra("open_settings", false)) desktop.post { showAppearance() }
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -71,6 +72,9 @@ class GnomeHomeActivity : Activity() {
     override fun onResume() {
         super.onResume()
         enterDesktopMode()
+        if (android.provider.Settings.canDrawOverlays(this)) {
+            try { startService(Intent(this, DesktopDockService::class.java)) } catch (_: Exception) {}
+        }
         if (::clock.isInitialized) updateClock()
         if (::resolution.isInitialized) updateResolution()
         if (::rootStatus.isInitialized) updateRootStatus()
