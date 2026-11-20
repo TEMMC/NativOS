@@ -390,7 +390,7 @@ class TerminalActivity : Activity() {
         }
         item("Choose distribution") { showCatalogue() }
         item("Clear terminal") { clearActiveTerminal() }
-        item("Terminal help") { append("\\nCommands: help, clear, exit. Install tools with apk, apt, dnf, pacman, etc.\\n") }
+        item("Terminal help") { append("\nCommands: help, clear, exit. Install tools with apk, apt, dnf, pacman, etc.\n") }
         item("Close terminal") { finish() }
         popup.showAsDropDown(anchor, 0, 0, Gravity.END)
     }
