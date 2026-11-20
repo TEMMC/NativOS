@@ -227,22 +227,22 @@ class TerminalActivity : Activity() {
                 val target = super.onCreateInputConnection(outAttrs) ?: return null
                 return object : InputConnectionWrapper(target, false) {
                     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                        repeat(beforeLength.coerceAtMost(128)) { sendPty("\\u007f") }
-                        repeat(afterLength.coerceAtMost(128)) { sendPty("\\u001b[3~") }
+                        repeat(beforeLength.coerceAtMost(128)) { sendPty("\u007f") }
+                        repeat(afterLength.coerceAtMost(128)) { sendPty("\u001b[3~") }
                         return true
                     }
 
                     override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean {
-                        repeat(beforeLength.coerceAtMost(128)) { sendPty("\\u007f") }
-                        repeat(afterLength.coerceAtMost(128)) { sendPty("\\u001b[3~") }
+                        repeat(beforeLength.coerceAtMost(128)) { sendPty("\u007f") }
+                        repeat(afterLength.coerceAtMost(128)) { sendPty("\u001b[3~") }
                         return true
                     }
 
                     override fun sendKeyEvent(event: KeyEvent): Boolean {
                         if (event.action == KeyEvent.ACTION_DOWN) {
                             when (event.keyCode) {
-                                KeyEvent.KEYCODE_DEL -> { sendPty("\\u007f"); return true }
-                                KeyEvent.KEYCODE_FORWARD_DEL -> { sendPty("\\u001b[3~"); return true }
+                                KeyEvent.KEYCODE_DEL -> { sendPty("\u007f"); return true }
+                                KeyEvent.KEYCODE_FORWARD_DEL -> { sendPty("\u001b[3~"); return true }
                             }
                         }
                         return super.sendKeyEvent(event)
