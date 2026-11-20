@@ -1,0 +1,142 @@
+package com.mt.gnome
+
+import android.app.Service
+import android.content.Intent
+import android.content.pm.ResolveInfo
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.IBinder
+import android.view.Gravity
+import android.view.WindowManager
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+
+/** Persistent application dock. Android displays this above other apps only after overlay approval. */
+class DesktopDockService : Service() {
+    private var manager: WindowManager? = null
+    private var dock: LinearLayout? = null
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        if (!android.provider.Settings.canDrawOverlays(this)) {
+            stopSelf()
+            return
+        }
+        manager = getSystemService(WINDOW_SERVICE) as WindowManager
+        buildDock()
+    }
+
+    private fun buildDock() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            setPadding(dp(5), dp(9), dp(5), dp(9))
+            background = rounded(Color.argb(246, 20, 22, 29), 18)
+        }
+        fun shortcut(glyph: String, title: String, action: () -> Unit) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(2), dp(7), dp(2), dp(7))
+                setOnClickListener { action() }
+                contentDescription = title
+            }
+            item.addView(TextView(this).apply {
+                text = glyph; textSize = 21f; gravity = Gravity.CENTER
+                setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD
+            }, LinearLayout.LayoutParams(dp(42), dp(35)))
+            item.addView(TextView(this).apply {
+                text = title; textSize = 8f; gravity = Gravity.CENTER
+                setTextColor(Color.LTGRAY); maxLines = 1
+            })
+            root.addView(item, LinearLayout.LayoutParams(dp(52), dp(54)))
+        }
+        shortcut("⌘", "Terminal") {
+            launchComponent("com.mt.gnome", "com.mt.gnome.TerminalActivity")
+        }
+        shortcut("⚙", "Settings") {
+            val i = Intent(this, GnomeHomeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            i.putExtra("open_settings", true)
+            startActivity(i)
+        }
+        val line = TextView(this).apply { setBackgroundColor(Color.argb(80,255,255,255)) }
+        root.addView(line, LinearLayout.LayoutParams(dp(36), dp(1)).apply { topMargin=dp(4); bottomMargin=dp(4) })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        val scroll = ScrollView(this).apply { overScrollMode = ScrollView.OVER_SCROLL_NEVER }
+        val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps: List<ResolveInfo> = packageManager.queryIntentActivities(query, 0)
+            .filter { it.activityInfo.packageName != packageName }
+            .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+        apps.forEach { info ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                setPadding(dp(2), dp(6), dp(2), dp(6))
+                contentDescription = info.loadLabel(packageManager).toString()
+                setOnClickListener { launchComponent(info.activityInfo.packageName, info.activityInfo.name) }
+            }
+            item.addView(ImageView(this).apply {
+                setImageDrawable(info.loadIcon(packageManager))
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }, LinearLayout.LayoutParams(dp(32), dp(32)))
+            item.addView(TextView(this).apply {
+                text = info.loadLabel(packageManager).toString(); textSize = 7.5f
+                setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(dp(50), dp(15)))
+            list.addView(item, LinearLayout.LayoutParams(dp(52), dp(55)))
+        }
+        scroll.addView(list)
+        root.addView(scroll, LinearLayout.LayoutParams(dp(54), 0, 1f))
+        dock = root
+        val params = WindowManager.LayoutParams(
+            dp(66), WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            x = dp(5); y = 0
+        }
+        try { manager?.addView(root, params) } catch (_: Exception) { stopSelf() }
+    }
+
+    private fun launchComponent(pkg: String, cls: String) {
+        Thread {
+            val component = "$pkg/$cls"
+            val command = "settings put global enable_freeform_support 1; settings put global force_resizable_activities 1; am start --windowingMode 5 -n '$component'"
+            val result = try {
+                val p = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+                val out = p.inputStream.bufferedReader().readText()
+                val err = p.errorStream.bufferedReader().readText()
+                val code = p.waitFor()
+                out + err + " exit=$code"
+            } catch (e: Exception) { e.toString() }
+            if (!result.contains("exit=0") || result.contains("Error:")) {
+                val launch = packageManager.getLaunchIntentForPackage(pkg)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (launch != null) try { startActivity(launch) } catch (_: Exception) {
+                    android.os.Handler(mainLooper).post { Toast.makeText(this, "Could not launch $pkg", Toast.LENGTH_SHORT).show() }
+                }
+            }
+        }.start()
+    }
+
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(radius).toFloat()
+        setStroke(dp(1), Color.argb(35, 230, 230, 255))
+    }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    override fun onDestroy() {
+        try { dock?.let { manager?.removeView(it) } } catch (_: Exception) {}
+        dock = null; manager = null
+        super.onDestroy()
+    }
+}
