@@ -2,7 +2,9 @@ package com.mt.gnome
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.ActivityInfo
 import android.content.pm.ResolveInfo
 import android.content.res.Configuration
@@ -18,7 +20,9 @@ import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.WindowManager
 import android.view.View
+import android.widget.Button
 import android.widget.EditText
 import android.widget.GridLayout
 import android.widget.ImageView
@@ -41,6 +45,7 @@ class GnomeHomeActivity : Activity() {
     private lateinit var rootStatus: TextView
     private var apps: List<ResolveInfo> = emptyList()
     private var wallpaperName = "Aurora"
+    private val wallpaperRequest = 4102
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +93,8 @@ class GnomeHomeActivity : Activity() {
 
     // Nature photographs are bundled into the APK, so wallpaper switching works offline.
     private fun wallpaperBackground(): Drawable {
+        val custom = prefs.getString("wallpaper_uri", null)
+        if (!custom.isNullOrBlank()) { try { return android.graphics.drawable.Drawable.createFromStream(contentResolver.openInputStream(Uri.parse(custom)), null) ?: GradientDrawable() } catch (_: Exception) {} }
         val imageName = when (wallpaperName) {
             "Forest" -> "forest.jpg"
             "Mountain Peaks" -> "mountain_peaks.jpg"
@@ -115,110 +122,41 @@ class GnomeHomeActivity : Activity() {
 
     private fun buildDesktop() {
         desktop = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(7), dp(10), dp(8))
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), dp(8), dp(8), dp(8))
             background = wallpaperBackground()
         }
-
-        // GNOME-style top bar
-        val top = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = rounded(Color.rgb(30, 30, 36), 12)
-            setPadding(dp(13), 0, dp(12), 0)
-        }
-        top.addView(label("Activities", 12, Color.WHITE, true).apply {
-            setPadding(0, 0, dp(18), 0)
-            setOnClickListener { focusSearch() }
-        })
-        top.addView(label("MT", 12, Color.rgb(194, 176, 255), true))
-        top.addView(label("  Desktop", 12, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
-        clock = label(now(), 12, Color.WHITE, true).apply { gravity = Gravity.CENTER }
-        top.addView(clock)
-        top.addView(label("  ▾", 17, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(12), 0, 0, 0)
-            setOnClickListener { showQuickSettings() }
-        })
-        desktop.addView(top, LinearLayout.LayoutParams(-1, dp(38)))
-
-        val workArea = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(9), 0, 0)
-        }
-
-        // GNOME dash / dock
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            background = rounded(Color.argb(220, 29, 30, 42), 18)
-            setPadding(dp(7), dp(10), dp(7), dp(10))
+            background = rounded(Color.argb(238, 20, 22, 29), 20)
+            setPadding(dp(6), dp(10), dp(6), dp(10))
         }
-        addDockButton(dock, "▦", "Apps") { focusSearch() }
         addDockButton(dock, "⌘", "Terminal") { openTerminalWindow() }
         addDockButton(dock, "⚙", "Settings") { showAppearance() }
-        addDockButton(dock, "⌂", "System") { showQuickSettings() }
-        workArea.addView(dock, LinearLayout.LayoutParams(dp(66), -1))
-
-        val workspace = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(2), dp(3), 0)
+        addDockButton(dock, "▣", "System") { showQuickSettings() }
+        dock.addView(View(this).apply { setBackgroundColor(Color.argb(80,255,255,255)) },
+            LinearLayout.LayoutParams(dp(38), dp(1)).apply { topMargin=dp(4); bottomMargin=dp(7) })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL }
+        apps.forEach { info ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                setPadding(dp(2), dp(6), dp(2), dp(6))
+                setOnClickListener { launchApp(info) }
+                contentDescription = info.loadLabel(packageManager).toString()
+            }
+            item.addView(ImageView(this).apply { setImageDrawable(info.loadIcon(packageManager)); scaleType=ImageView.ScaleType.FIT_CENTER },
+                LinearLayout.LayoutParams(dp(34),dp(34)))
+            item.addView(label(info.loadLabel(packageManager).toString(),8,Color.WHITE,true).apply {
+                gravity=Gravity.CENTER; maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(dp(54),dp(16)))
+            list.addView(item, LinearLayout.LayoutParams(dp(56),dp(58)))
         }
-        val heading = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        heading.addView(label("Applications", 19, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
-        resolution = label("", 10, muted, true).apply { gravity = Gravity.CENTER_VERTICAL }
-        heading.addView(resolution)
-        workspace.addView(heading, LinearLayout.LayoutParams(-1, dp(32)))
-        workspace.addView(label("Your desktop workspace", 10, muted).apply {
-            setPadding(0, dp(1), 0, dp(8))
-        })
-
-        search = EditText(this).apply {
-            hint = "  Search apps…"
-            textSize = 13f
-            setSingleLine(true)
-            setTextColor(Color.WHITE)
-            setHintTextColor(muted)
-            setPadding(dp(13), 0, dp(13), 0)
-            background = rounded(Color.argb(220, 37, 40, 61), 13)
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderApps() }
-                override fun afterTextChanged(s: Editable?) {}
-            })
-        }
-        workspace.addView(search, LinearLayout.LayoutParams(-1, dp(42)))
-
-        val scroll = ScrollView(this).apply {
-            clipToPadding = false
-            isFillViewport = true
-            setPadding(0, dp(8), 0, dp(4))
-        }
-        appGrid = GridLayout(this).apply {
-            columnCount = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 7 else 4
-            useDefaultMargins = false
-        }
-        scroll.addView(appGrid)
-        workspace.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        val footer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), dp(4), dp(2), 0)
-        }
-        rootStatus = label("Checking root access…", 9, muted, true)
-        footer.addView(rootStatus, LinearLayout.LayoutParams(0, -2, 1f))
-        footer.addView(label("MT-OS  •  GNOME-style session", 9, muted))
-        workspace.addView(footer)
-        workArea.addView(workspace, LinearLayout.LayoutParams(0, -1, 1f))
-        desktop.addView(workArea, LinearLayout.LayoutParams(-1, 0, 1f))
+        val scroll = ScrollView(this).apply { overScrollMode=View.OVER_SCROLL_NEVER }
+        scroll.addView(list)
+        dock.addView(scroll, LinearLayout.LayoutParams(dp(58),0,1f))
+        desktop.addView(dock, LinearLayout.LayoutParams(dp(70),-1))
         setContentView(desktop)
-        updateClock()
-        updateResolution()
     }
 
     private fun loadApps() {
@@ -226,7 +164,7 @@ class GnomeHomeActivity : Activity() {
         apps = packageManager.queryIntentActivities(query, 0)
             .filter { it.activityInfo.packageName != packageName }
             .sortedBy { it.loadLabel(packageManager).toString().lowercase(Locale.getDefault()) }
-        renderApps()
+        buildDesktop()
     }
 
     private fun renderApps() {
@@ -364,14 +302,90 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun showAppearance() {
-        val options = arrayOf("Change wallpaper", "Screen orientation", "Display resolution")
-        AlertDialog.Builder(this).setTitle("Desktop settings").setItems(options) { _, which ->
-            when (which) {
-                0 -> showWallpaperPicker()
-                1 -> showOrientationSettings()
-                2 -> showResolutionSettings()
+        val dialog = Dialog(this)
+        val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(27,29,38),20); setPadding(dp(16),dp(14),dp(16),dp(14)) }
+        val heading = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
+        heading.addView(label("MT-GNOME Settings",19,Color.WHITE,true),LinearLayout.LayoutParams(0,-2,1f))
+        heading.addView(label("✕",20,muted,true).apply { setOnClickListener { dialog.dismiss() } })
+        root.addView(heading)
+        root.addView(label("Desktop configuration",10,muted).apply { setPadding(0,dp(4),0,dp(10)) })
+        val body=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+        val nav=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(36,38,49),12); setPadding(dp(4),dp(4),dp(4),dp(4)) }
+        val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(10),0,0,0) }
+        val scroll=ScrollView(this).apply { isFillViewport=true }; scroll.addView(panel)
+        body.addView(nav,LinearLayout.LayoutParams(dp(108),-1)); body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
+        root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
+        fun page(title:String,desc:String) { panel.removeAllViews(); panel.addView(label(title,17,Color.WHITE,true)); panel.addView(label(desc,10,muted).apply { setPadding(0,dp(3),0,dp(12)) }) }
+        fun item(title:String,desc:String="",click:()->Unit) {
+            val v=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(40,43,55),10); setPadding(dp(10),dp(9),dp(10),dp(9)); setOnClickListener { click() } }
+            v.addView(label(title,12,Color.WHITE,true))
+            if(desc.isNotBlank()) v.addView(label(desc,9,muted).apply { setPadding(0,dp(3),0,0) })
+            panel.addView(v,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(7) })
+        }
+        fun navItem(name:String,open:()->Unit) { nav.addView(label(name,10,Color.WHITE,true).apply { setPadding(dp(7),dp(11),dp(3),dp(11)); setOnClickListener { open() } }) }
+        navItem("Appearance") {
+            page("Appearance","Wallpaper and desktop presentation")
+            listOf("Mountain Lake","Forest","Mountain Peaks","Tropical Beach","Open Landscape").forEach { name ->
+                item(name,if(wallpaperName==name) "Built-in wallpaper" else "") {
+                    wallpaperName=name; prefs.edit().putString("wallpaper",name).remove("wallpaper_uri").apply(); buildDesktop(); dialog.dismiss()
+                }
             }
-        }.setNegativeButton("Close", null).show()
+            item("Choose from phone storage","Select an image from internal storage or SD card") {
+                val pick=Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type="image/*"; addCategory(Intent.CATEGORY_OPENABLE); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) }
+                startActivityForResult(pick,wallpaperRequest)
+            }
+        }
+        navItem("Input & Pointer") {
+            page("Input & Pointer","Touch and pointer preferences")
+            item("Direct touch","Use direct taps and drags") { prefs.edit().putString("input_mode","direct").apply(); toast("Direct touch selected") }
+            item("Trackpad mode","Save relative pointer preference") { prefs.edit().putString("input_mode","trackpad").apply(); toast("Trackpad preference saved") }
+            item("Overlay permission","Allow the dock or pointer to appear above other apps") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName"))) }
+            item("Accessibility settings","Android requires explicit approval for cross-app gesture control") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }
+        navItem("Windows") {
+            page("Windows","Floating app window behaviour")
+            item("Enable freeform windows","Uses Magisk root; firmware may restrict some apps") { dialog.dismiss(); enableLinuxWindows() }
+            item("Display over other apps","Manage Android overlay access") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName"))) }
+        }
+        navItem("Terminal") {
+            page("Terminal","Terminal appearance and behaviour")
+            item("Font size","Current: ${prefs.getInt("terminal_font_size",13)} sp") {
+                val sizes=arrayOf("11 sp","12 sp","13 sp","14 sp","15 sp","16 sp")
+                AlertDialog.Builder(this).setTitle("Terminal font size").setItems(sizes) { _,i -> prefs.edit().putInt("terminal_font_size",11+i).apply() }.show()
+            }
+            item("Default distribution",prefs.getString("active_distro","Select when opening") ?: "Select when opening") { toast("Choose the active distribution in DISTROS") }
+        }
+        navItem("Display") {
+            page("Display","Screen configuration")
+            item("Orientation",prefs.getString("orientation","landscape") ?: "landscape") { showOrientationSettings() }
+            item("Logical resolution","Android display size; physical panel is unchanged") { showResolutionSettings() }
+        }
+        navItem("System & Security") {
+            page("System & Security","App permissions and device integration")
+            item("Root access","Authorize or verify Magisk integration") { enableLinuxWindows() }
+            item("Android app permissions","Review permissions in Android settings") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName"))) }
+            item("System settings","Open Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
+        navItem("About") { page("About MT-GNOME","MT-OS desktop shell"); item("Version","0.1.0-alpha") {}; item("Device","${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}") {} }
+        page("Appearance","Wallpaper and desktop presentation")
+        root.addView(Button(this).apply { text="Close"; isAllCaps=false; setOnClickListener { dialog.dismiss() } },LinearLayout.LayoutParams(-1,dp(42)).apply { topMargin=dp(10) })
+        dialog.setContentView(root); dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels*.94f).toInt(),(resources.displayMetrics.heightPixels*.88f).toInt())
+        dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        dialog.window?.attributes=dialog.window?.attributes?.apply { gravity=Gravity.CENTER; dimAmount=.48f }
+    }
+
+    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
+        super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode==wallpaperRequest && resultCode==RESULT_OK) {
+            val uri=data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                prefs.edit().putString("wallpaper_uri",uri.toString()).apply()
+                buildDesktop(); toast("Selected wallpaper applied")
+            } catch(e:Exception) { toast("Could not apply wallpaper: ${e.message}") }
+        }
     }
 
     private fun showWallpaperPicker() {
