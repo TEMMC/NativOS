@@ -74,6 +74,9 @@ class GnomeHomeActivity : Activity() {
         enterDesktopMode()
         if (android.provider.Settings.canDrawOverlays(this)) {
             try { startService(Intent(this, DesktopDockService::class.java)) } catch (_: Exception) {}
+            if (prefs.getString("input_mode", "direct") == "trackpad") {
+                try { startService(Intent(this, PointerOverlayService::class.java)) } catch (_: Exception) {}
+            }
         }
         if (::clock.isInitialized) updateClock()
         if (::resolution.isInitialized) updateResolution()
@@ -341,10 +344,27 @@ class GnomeHomeActivity : Activity() {
         }
         navItem("Input & Pointer") {
             page("Input & Pointer","Touch and pointer preferences")
-            item("Direct touch","Use direct taps and drags") { prefs.edit().putString("input_mode","direct").apply(); toast("Direct touch selected") }
-            item("Trackpad mode","Save relative pointer preference") { prefs.edit().putString("input_mode","trackpad").apply(); toast("Trackpad preference saved") }
+            item("Direct touch","Use the phone screen directly; hide the virtual pointer and trackpad") {
+                prefs.edit().putString("input_mode","direct").apply()
+                stopService(Intent(this, PointerOverlayService::class.java))
+                toast("Direct touch enabled")
+            }
+            item("Trackpad mode","Show a floating pointer and trackpad above Android apps") {
+                prefs.edit().putString("input_mode","trackpad").apply()
+                if (!Settings.canDrawOverlays(this)) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName")))
+                } else {
+                    startService(Intent(this, PointerOverlayService::class.java))
+                    if (!MTGNOMEAccessibilityService.isConnected()) {
+                        AlertDialog.Builder(this).setTitle("Enable MT-GNOME Pointer")
+                            .setMessage("Android must enable MT-GNOME Pointer in Accessibility settings before pointer clicks and gestures can be sent to other apps.")
+                            .setPositiveButton("Open Accessibility settings") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                            .setNegativeButton("Later", null).show()
+                    } else toast("Trackpad enabled")
+                }
+            }
             item("Overlay permission","Allow the dock or pointer to appear above other apps") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName"))) }
-            item("Accessibility settings","Android requires explicit approval for cross-app gesture control") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            item("Enable MT-GNOME Pointer","Turn on MT-GNOME Pointer under Installed services in Android Accessibility settings") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
         navItem("Windows") {
             page("Windows","Floating app window behaviour")
