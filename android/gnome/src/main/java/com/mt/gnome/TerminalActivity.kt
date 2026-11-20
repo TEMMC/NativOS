@@ -49,6 +49,7 @@ class TerminalActivity : Activity() {
     private lateinit var input: EditText
     private lateinit var scroll: ScrollView
     private var busy = false
+    private var clearingInput = false
     private var active: String? = null
     private var installProgress: ProgressDialog? = null
     private var windowX = 0
@@ -136,7 +137,7 @@ class TerminalActivity : Activity() {
         val base = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(10))
-            background = rounded(Color.argb(190, 17, 20, 29), 16)
+            background = rounded(Color.argb(112, 17, 20, 29), 16)
         }
         val titleBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -198,7 +199,7 @@ class TerminalActivity : Activity() {
             isFillViewport = true
             isVerticalScrollBarEnabled = true
             setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET)
-            background = rounded(Color.argb(145, 8, 11, 17), 9)
+            background = rounded(Color.argb(72, 8, 11, 17), 9)
             setPadding(dp(13), dp(12), dp(13), dp(12))
         }
         output = TextView(this).apply {
@@ -215,21 +216,31 @@ class TerminalActivity : Activity() {
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
         input = EditText(this).apply {
+            // Keep a real, focusable IME target. The terminal view itself is selectable;
+            // this field receives Android soft-keyboard events and forwards them to the PTY.
             setTextColor(Color.TRANSPARENT)
             setHintTextColor(Color.TRANSPARENT)
             textSize = 1f
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            alpha = 0.015f
+            alpha = 0.01f
             background = null
             isFocusable = true
             isFocusableInTouchMode = true
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    if (clearingInput) return
+                    if (before > count) {
+                        repeat(before - count) { sendPty("\u007f") }
+                    }
                     if (count > 0) sendPty(s?.subSequence(start, start + count)?.toString() ?: "")
-                    post { text?.clear() }
+                    post {
+                        clearingInput = true
+                        text?.clear()
+                        clearingInput = false
+                    }
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
@@ -248,8 +259,6 @@ class TerminalActivity : Activity() {
                     KeyEvent.KEYCODE_DPAD_LEFT -> "\u001b[D"
                     KeyEvent.KEYCODE_TAB -> "\t"
                     KeyEvent.KEYCODE_ESCAPE -> "\u001b"
-                    KeyEvent.KEYCODE_DEL -> "\u007f"
-                    KeyEvent.KEYCODE_ENTER -> "\r"
                     KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\u0003" else null
                     KeyEvent.KEYCODE_D -> if (event.isCtrlPressed) "\u0004" else null
                     KeyEvent.KEYCODE_L -> if (event.isCtrlPressed) "\u000c" else null
@@ -260,7 +269,7 @@ class TerminalActivity : Activity() {
         }
         output.setOnClickListener { focusTerminalInput() }
         output.setOnLongClickListener { copyTerminalSelection(); true }
-        base.addView(input, LinearLayout.LayoutParams(dp(1), dp(1)))
+        base.addView(input, LinearLayout.LayoutParams(-1, dp(2)))
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -784,7 +793,9 @@ class TerminalActivity : Activity() {
         if (session.fd < 0 || scroll.width <= 0 || scroll.height <= 0) return
         val charWidth = (output.textSize * 0.62f).coerceAtLeast(1f)
         val lineHeight = (output.textSize * 1.45f).coerceAtLeast(1f)
-        try { nativeResizePty(session.fd, (scroll.width / charWidth).toInt().coerceIn(20, 240), (scroll.height / lineHeight).toInt().coerceIn(5, 100)) } catch (_: Exception) {}
+        val usableWidth = (scroll.width - scroll.paddingLeft - scroll.paddingRight).coerceAtLeast(1)
+        val usableHeight = (scroll.height - scroll.paddingTop - scroll.paddingBottom).coerceAtLeast(1)
+        try { nativeResizePty(session.fd, (usableWidth / charWidth).toInt().coerceIn(20, 240), (usableHeight / lineHeight).toInt().coerceIn(5, 100)) } catch (_: Exception) {}
     }
 
     private fun sendPty(text: String) {
