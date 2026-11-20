@@ -351,6 +351,8 @@ class TerminalActivity : Activity() {
             windowWidth = restoreBounds[2]; windowHeight = restoreBounds[3]
             maximized = false
         }
+        FloatingTerminalService.updatePosition(windowX, windowY)
+        FloatingTerminalService.updateSize(windowWidth, windowHeight)
         applyWindowBounds()
         resizePty()
     }
@@ -792,6 +794,13 @@ class TerminalActivity : Activity() {
         text = text.replace(Regex("\u001B\\([B0]"), "")
         return text.replace("\r\n", "\n").replace('\r', '\n')
             .filter { it == '\n' || it == '\t' || it >= ' ' }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (android.provider.Settings.canDrawOverlays(this) && overlayContent?.parent != null) {
+            startService(Intent(this, FloatingTerminalService::class.java))
+        }
     }
 
     override fun onDestroy() {
