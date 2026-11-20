@@ -135,7 +135,7 @@ class TerminalActivity : Activity() {
         val base = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(10))
-            background = rounded(Color.rgb(17, 20, 29), 16)
+            background = rounded(Color.argb(190, 17, 20, 29), 16)
         }
         val titleBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -195,7 +195,7 @@ class TerminalActivity : Activity() {
             isFillViewport = true
             isVerticalScrollBarEnabled = true
             setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET)
-            background = rounded(Color.rgb(8, 11, 17), 9)
+            background = rounded(Color.argb(145, 8, 11, 17), 9)
             setPadding(dp(13), dp(12), dp(13), dp(12))
         }
         output = TextView(this).apply {
@@ -264,10 +264,11 @@ class TerminalActivity : Activity() {
             setPadding(0, dp(3), dp(2), 0)
         }
         bottomBar.addView(TextView(this).apply {
-            text = "↘"; textSize = 19f; setTextColor(Color.rgb(145, 158, 180))
+            text = "⤡"; textSize = 22f; setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             contentDescription = "Drag to resize terminal window"
-            setPadding(dp(12), dp(2), dp(8), dp(2))
+            background = rounded(Color.argb(190, 65, 78, 104), 8)
+            setPadding(dp(14), dp(4), dp(14), dp(4))
             setOnTouchListener { _, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> { resizeStart(event.rawX, event.rawY); true }
@@ -277,7 +278,7 @@ class TerminalActivity : Activity() {
                 }
             }
         })
-        base.addView(bottomBar, LinearLayout.LayoutParams(-1, dp(28)))
+        base.addView(bottomBar, LinearLayout.LayoutParams(-1, dp(44)))
         setContentView(base)
         overlayContent = base
         if (android.provider.Settings.canDrawOverlays(this)) {
