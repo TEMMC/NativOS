@@ -69,7 +69,10 @@ class TerminalActivity : Activity() {
     private lateinit var sessionTabs: LinearLayout
     private val ptyLock = Any()
 
-    companion object { init { System.loadLibrary("mtpty") } }
+    companion object {
+        @Volatile var overlayContent: View? = null
+        init { System.loadLibrary("mtpty") }
+    }
     private external fun nativeOpenPty(command: String, columns: Int, rows: Int): Long
     private external fun nativeResizePty(fd: Int, columns: Int, rows: Int)
     private external fun nativeClosePty(fd: Int, pid: Int)
@@ -274,6 +277,18 @@ class TerminalActivity : Activity() {
         })
         base.addView(bottomBar, LinearLayout.LayoutParams(-1, dp(28)))
         setContentView(base)
+        overlayContent = base
+        if (android.provider.Settings.canDrawOverlays(this)) {
+            startService(Intent(this, FloatingTerminalService::class.java))
+        } else {
+            AlertDialog.Builder(this).setTitle("Allow floating terminal")
+                .setMessage("MT Terminal needs Display over other apps permission so it can stay visible while you use other Android apps.")
+                .setPositiveButton("Grant permission") { _, _ ->
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:$packageName")))
+                }
+                .setNegativeButton("Use normal window", null).show()
+        }
     }
 
     private var gestureStartX = 0f
@@ -305,6 +320,7 @@ class TerminalActivity : Activity() {
         val metrics = resources.displayMetrics
         windowX = (gestureWindowX + rawX - gestureStartX).toInt().coerceIn(0, (metrics.widthPixels - windowWidth).coerceAtLeast(0))
         windowY = (gestureWindowY + rawY - gestureStartY).toInt().coerceIn(0, (metrics.heightPixels - windowHeight).coerceAtLeast(0))
+        FloatingTerminalService.updatePosition(windowX, windowY)
         applyWindowBounds()
     }
 
@@ -319,6 +335,7 @@ class TerminalActivity : Activity() {
         val metrics = resources.displayMetrics
         windowWidth = (gestureWindowWidth + rawX - gestureStartX).toInt().coerceIn(dp(280), (metrics.widthPixels - windowX).coerceAtLeast(dp(280)))
         windowHeight = (gestureWindowHeight + rawY - gestureStartY).toInt().coerceIn(dp(240), (metrics.heightPixels - windowY).coerceAtLeast(dp(240)))
+        FloatingTerminalService.updateSize(windowWidth, windowHeight)
         applyWindowBounds()
     }
 
@@ -778,6 +795,8 @@ class TerminalActivity : Activity() {
     }
 
     override fun onDestroy() {
+        overlayContent = null
+        stopService(Intent(this, FloatingTerminalService::class.java))
         closeAllSessions()
         super.onDestroy()
     }
