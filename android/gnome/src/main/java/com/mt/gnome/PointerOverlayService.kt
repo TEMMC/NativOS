@@ -28,6 +28,7 @@ class PointerOverlayService : Service() {
     private var startPointerX = 0f
     private var startPointerY = 0f
     private var moved = false
+    private var lastTwoFingerY = 0f
     private var accessibilityWarningShown = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -123,11 +124,38 @@ class PointerOverlayService : Service() {
                         moved = false
                         true
                     }
+                    MotionEvent.ACTION_POINTER_DOWN -> {
+                        if (event.pointerCount >= 2) {
+                            lastTwoFingerY = (event.getY(0) + event.getY(1)) / 2f
+                            moved = true
+                        }
+                        true
+                    }
                     MotionEvent.ACTION_MOVE -> {
-                        val dx = event.rawX - downX
-                        val dy = event.rawY - downY
-                        if (abs(dx) + abs(dy) > dp(3)) moved = true
-                        movePointer(startPointerX + dx * 1.8f, startPointerY + dy * 1.8f)
+                        if (event.pointerCount >= 2) {
+                            val averageY = (event.getY(0) + event.getY(1)) / 2f
+                            val delta = averageY - lastTwoFingerY
+                            if (abs(delta) > dp(1)) {
+                                moved = true
+                                if (MTGNOMEAccessibilityService.isConnected()) {
+                                    MTGNOMEAccessibilityService.swipe(
+                                        pointerX, pointerY,
+                                        pointerX, (pointerY - delta * 1.4f).coerceIn(0f, (screenSize().y - dp(12)).toFloat()),
+                                        110L
+                                    )
+                                }
+                            }
+                            lastTwoFingerY = averageY
+                        } else {
+                            val dx = event.rawX - downX
+                            val dy = event.rawY - downY
+                            if (abs(dx) + abs(dy) > dp(3)) moved = true
+                            movePointer(startPointerX + dx * 1.8f, startPointerY + dy * 1.8f)
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_POINTER_UP -> {
+                        moved = true
                         true
                     }
                     MotionEvent.ACTION_UP -> {
