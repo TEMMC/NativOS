@@ -53,6 +53,7 @@ class FloatingTerminalService : Service() {
     override fun onCreate() {
         super.onCreate()
         active = this
+        TerminalActivity.hostActivity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "Allow Display over other apps to use the floating terminal", Toast.LENGTH_LONG).show()
             stopSelf()
