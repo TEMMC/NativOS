@@ -11,6 +11,7 @@
         android:theme="@style/Theme.MTGnome"
         android:supportsRtl="true"
         android:resizeableActivity="true">
+        <service android:name=".DesktopDockService" android:exported="false" />
         <activity android:name=".TerminalActivity" android:exported="false" android:label="Terminal" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".GnomeHomeActivity"
