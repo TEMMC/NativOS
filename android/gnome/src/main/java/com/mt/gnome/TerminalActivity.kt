@@ -277,7 +277,7 @@ class TerminalActivity : Activity() {
                     else -> false
                 }
             }
-        })
+        }, LinearLayout.LayoutParams(dp(68), dp(40)))
         base.addView(bottomBar, LinearLayout.LayoutParams(-1, dp(44)))
         setContentView(base)
         overlayContent = base
