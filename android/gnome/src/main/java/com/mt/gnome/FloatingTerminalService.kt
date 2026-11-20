@@ -22,6 +22,7 @@ class FloatingTerminalService : Service() {
     override fun onDestroy() {
         content?.let { view -> try { if (view.isAttachedToWindow) wm.removeView(view) } catch (_: Exception) {} }
         content = null
+        active = null
         super.onDestroy()
     }
 
