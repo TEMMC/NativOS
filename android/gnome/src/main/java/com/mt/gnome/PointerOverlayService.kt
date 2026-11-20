@@ -29,6 +29,7 @@ class PointerOverlayService : Service() {
     private var startPointerY = 0f
     private var moved = false
     private var lastTwoFingerY = 0f
+    private var twoFingerScroll = 0f
     private var accessibilityWarningShown = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -127,6 +128,7 @@ class PointerOverlayService : Service() {
                     MotionEvent.ACTION_POINTER_DOWN -> {
                         if (event.pointerCount >= 2) {
                             lastTwoFingerY = (event.getY(0) + event.getY(1)) / 2f
+                            twoFingerScroll = 0f
                             moved = true
                         }
                         true
@@ -137,13 +139,7 @@ class PointerOverlayService : Service() {
                             val delta = averageY - lastTwoFingerY
                             if (abs(delta) > dp(1)) {
                                 moved = true
-                                if (MTGNOMEAccessibilityService.isConnected()) {
-                                    MTGNOMEAccessibilityService.swipe(
-                                        pointerX, pointerY,
-                                        pointerX, (pointerY - delta * 1.4f).coerceIn(0f, (screenSize().y - dp(12)).toFloat()),
-                                        110L
-                                    )
-                                }
+                                twoFingerScroll += delta
                             }
                             lastTwoFingerY = averageY
                         } else {
@@ -159,7 +155,13 @@ class PointerOverlayService : Service() {
                         true
                     }
                     MotionEvent.ACTION_UP -> {
-                        if (!moved) sendClick()
+                        if (!moved) {
+                            sendClick()
+                        } else if (abs(twoFingerScroll) > dp(8) && MTGNOMEAccessibilityService.isConnected()) {
+                            val targetY = (pointerY - twoFingerScroll * 1.4f)
+                                .coerceIn(0f, (screenSize().y - dp(12)).toFloat())
+                            MTGNOMEAccessibilityService.swipe(pointerX, pointerY, pointerX, targetY, 220L)
+                        }
                         true
                     }
                     MotionEvent.ACTION_CANCEL -> true
