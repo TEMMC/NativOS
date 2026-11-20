@@ -18,7 +18,11 @@ import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputConnectionWrapper
 import android.text.Editable
+import android.text.Spannable
+import android.text.Selection
 import android.text.TextWatcher
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
@@ -137,7 +141,7 @@ class TerminalActivity : Activity() {
         val base = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(10))
-            background = rounded(Color.argb(112, 17, 20, 29), 16)
+            background = rounded(Color.argb(76, 17, 20, 29), 16)
         }
         val titleBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -178,6 +182,7 @@ class TerminalActivity : Activity() {
         }
         toolbar.addView(btn("Distros") { showCatalogue() })
         toolbar.addView(btn("New +") { newSession() })
+        toolbar.addView(btn("Select") { selectAllTerminalOutput() })
         toolbar.addView(btn("Copy") { copyTerminalSelection() })
         toolbar.addView(btn("Paste") { pasteClipboard() })
         toolbar.addView(btn("Clear") { clearActiveTerminal() })
@@ -199,13 +204,14 @@ class TerminalActivity : Activity() {
             isFillViewport = true
             isVerticalScrollBarEnabled = true
             setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET)
-            background = rounded(Color.argb(72, 8, 11, 17), 9)
+            background = rounded(Color.argb(24, 8, 11, 17), 9)
             setPadding(dp(13), dp(12), dp(13), dp(12))
         }
         output = TextView(this).apply {
             text = "MT Terminal  •  select an installed distribution\n"; textSize = 13f
             typeface = Typeface.create("monospace", Typeface.NORMAL)
-            setTextColor(Color.rgb(218, 228, 240))
+            setTextColor(Color.rgb(232, 238, 248))
+            highlightColor = Color.argb(150, 65, 110, 180)
             setTextIsSelectable(true)
             isFocusable = true
             isFocusableInTouchMode = true
@@ -216,7 +222,34 @@ class TerminalActivity : Activity() {
         scroll.addView(output)
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
-        input = EditText(this).apply {
+        input = object : EditText(this) {
+            override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+                val target = super.onCreateInputConnection(outAttrs) ?: return null
+                return object : InputConnectionWrapper(target, false) {
+                    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                        repeat(beforeLength.coerceAtMost(128)) { sendPty("\\u007f") }
+                        repeat(afterLength.coerceAtMost(128)) { sendPty("\\u001b[3~") }
+                        return true
+                    }
+
+                    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean {
+                        repeat(beforeLength.coerceAtMost(128)) { sendPty("\\u007f") }
+                        repeat(afterLength.coerceAtMost(128)) { sendPty("\\u001b[3~") }
+                        return true
+                    }
+
+                    override fun sendKeyEvent(event: KeyEvent): Boolean {
+                        if (event.action == KeyEvent.ACTION_DOWN) {
+                            when (event.keyCode) {
+                                KeyEvent.KEYCODE_DEL -> { sendPty("\\u007f"); return true }
+                                KeyEvent.KEYCODE_FORWARD_DEL -> { sendPty("\\u001b[3~"); return true }
+                            }
+                        }
+                        return super.sendKeyEvent(event)
+                    }
+                }
+            }
+        }.apply {
             // Keep a real, focusable IME target. The terminal view itself is selectable;
             // this field receives Android soft-keyboard events and forwards them to the PTY.
             setTextColor(Color.TRANSPARENT)
@@ -233,9 +266,6 @@ class TerminalActivity : Activity() {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     if (clearingInput) return
-                    if (before > count) {
-                        repeat(before - count) { sendPty("\u007f") }
-                    }
                     if (count > 0) sendPty(s?.subSequence(start, start + count)?.toString() ?: "")
                     post {
                         clearingInput = true
@@ -258,6 +288,8 @@ class TerminalActivity : Activity() {
                     KeyEvent.KEYCODE_DPAD_DOWN -> "\u001b[B"
                     KeyEvent.KEYCODE_DPAD_RIGHT -> "\u001b[C"
                     KeyEvent.KEYCODE_DPAD_LEFT -> "\u001b[D"
+                    KeyEvent.KEYCODE_DEL -> "\u007f"
+                    KeyEvent.KEYCODE_FORWARD_DEL -> "\u001b[3~"
                     KeyEvent.KEYCODE_TAB -> "\t"
                     KeyEvent.KEYCODE_ESCAPE -> "\u001b"
                     KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\u0003" else null
@@ -772,12 +804,23 @@ class TerminalActivity : Activity() {
         output.text = ""
     }
 
+    private fun selectAllTerminalOutput() {
+        val text = output.text
+        if (text is Spannable && text.isNotEmpty()) {
+            Selection.setSelection(text, 0, text.length)
+            Toast.makeText(this, "All terminal output selected", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun copyTerminalSelection() {
-        val start = output.selectionStart; val end = output.selectionEnd; val text = output.text
-        val selected = if (start >= 0 && end > start) text.subSequence(start, end).toString() else text.toString()
+        val text = output.text
+        val start = Selection.getSelectionStart(text)
+        val end = Selection.getSelectionEnd(text)
+        val hasSelection = start >= 0 && end >= 0 && start != end
+        val selected = if (hasSelection) text.subSequence(minOf(start, end), maxOf(start, end)).toString() else text.toString()
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("MT Terminal", selected))
-        Toast.makeText(this, if (start >= 0 && end > start) "Selection copied" else "Terminal output copied", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, if (hasSelection) "Selection copied" else "Terminal output copied", Toast.LENGTH_SHORT).show()
     }
 
     private fun pasteClipboard() {
