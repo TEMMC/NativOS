@@ -366,6 +366,24 @@ class GnomeHomeActivity : Activity() {
             item("Overlay permission","Allow the dock or pointer to appear above other apps") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName"))) }
             item("Enable MT-GNOME Pointer","Turn on MT-GNOME Pointer under Installed services in Android Accessibility settings") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
+        navItem("App Bar") {
+            page("App Bar","Control the desktop dock and its floating toggle")
+            item("Show app bar","Display the dock above the desktop and other apps") {
+                prefs.edit().putBoolean("dock_visible", true).apply()
+                if (Settings.canDrawOverlays(this)) startService(Intent(this, DesktopDockService::class.java).setAction("com.mt.gnome.DOCK_SHOW"))
+                else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            }
+            item("Hide app bar","Hide the dock but keep the floating toggle button") {
+                startService(Intent(this, DesktopDockService::class.java).setAction("com.mt.gnome.DOCK_HIDE"))
+            }
+            item("Toggle app bar","Switch between visible and hidden dock states") {
+                if (Settings.canDrawOverlays(this)) startService(Intent(this, DesktopDockService::class.java).setAction("com.mt.gnome.DOCK_TOGGLE"))
+                else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            }
+            item("Overlay permission","Allow the small dock toggle to remain above other apps") {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            }
+        }
         navItem("Windows") {
             page("Windows","Floating app window behaviour")
             item("Enable freeform windows","Uses Magisk root; firmware may restrict some apps") { dialog.dismiss(); enableLinuxWindows() }
