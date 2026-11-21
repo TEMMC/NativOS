@@ -49,20 +49,23 @@ class DesktopDockService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.START or Gravity.BOTTOM; x = dp(8); y = dp(90) }
+        var lastX = 0f
+        var lastY = 0f
+        var dragged = false
         bubble.setOnTouchListener { view, event ->
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> { view.setTag(R.id.mt_dock_drag_x, event.rawX); view.setTag(R.id.mt_dock_drag_y, event.rawY); true }
+                MotionEvent.ACTION_DOWN -> { lastX = event.rawX; lastY = event.rawY; dragged = false; true }
                 MotionEvent.ACTION_MOVE -> {
-                    val sx = view.getTag(R.id.mt_dock_drag_x) as? Float ?: event.rawX
-                    val sy = view.getTag(R.id.mt_dock_drag_y) as? Float ?: event.rawY
-                    val dx = event.rawX - sx; val dy = event.rawY - sy
-                    if (kotlin.math.abs(dx) + kotlin.math.abs(dy) > dp(8)) {
-                        params.x = (params.x + dx).toInt().coerceAtLeast(0); params.y = (params.y - dy).toInt().coerceAtLeast(0)
+                    val dx = event.rawX - lastX; val dy = event.rawY - lastY
+                    if (kotlin.math.abs(dx) + kotlin.math.abs(dy) > dp(3)) dragged = true
+                    if (dragged) {
+                        params.x = (params.x + dx).toInt().coerceAtLeast(0)
+                        params.y = (params.y - dy).toInt().coerceAtLeast(0)
                         try { manager?.updateViewLayout(view, params) } catch (_: Exception) {}
-                        view.setTag(R.id.mt_dock_drag_x, event.rawX); view.setTag(R.id.mt_dock_drag_y, event.rawY)
-                    }; true
+                    }
+                    lastX = event.rawX; lastY = event.rawY; true
                 }
-                MotionEvent.ACTION_UP -> { view.performClick(); true }
+                MotionEvent.ACTION_UP -> { if (!dragged) view.performClick(); true }
                 else -> true
             }
         }
