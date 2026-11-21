@@ -26,6 +26,15 @@ class DesktopDockService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            "com.mt.gnome.DOCK_SHOW" -> { if (dock == null) buildDock(); getSharedPreferences("mt_gnome", MODE_PRIVATE).edit().putBoolean("dock_visible", true).apply() }
+            "com.mt.gnome.DOCK_HIDE" -> { if (dock != null) { try { manager?.removeView(dock) } catch (_: Exception) {}; dock = null }; getSharedPreferences("mt_gnome", MODE_PRIVATE).edit().putBoolean("dock_visible", false).apply() }
+            "com.mt.gnome.DOCK_TOGGLE" -> toggleDock()
+        }
+        return START_STICKY
+    }
+
     override fun onCreate() {
         super.onCreate()
         if (!android.provider.Settings.canDrawOverlays(this)) {
