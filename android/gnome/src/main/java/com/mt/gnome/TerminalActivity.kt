@@ -222,7 +222,7 @@ class TerminalActivity : Activity() {
         scroll.addView(output)
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
-        input = EditText(this).apply {apply {
+        input = EditText(this).apply {
             // Keep a real, focusable IME target. The terminal view itself is selectable;
             // this field receives Android soft-keyboard events and forwards them to the PTY.
             setTextColor(Color.WHITE)
