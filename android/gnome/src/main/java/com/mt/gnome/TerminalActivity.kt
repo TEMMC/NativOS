@@ -222,63 +222,37 @@ class TerminalActivity : Activity() {
         scroll.addView(output)
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
-        input = object : EditText(this) {
-            override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
-                val target = super.onCreateInputConnection(outAttrs) ?: return null
-                return object : InputConnectionWrapper(target, false) {
-                    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                        repeat(beforeLength.coerceAtMost(128)) { sendPty("\u007f") }
-                        repeat(afterLength.coerceAtMost(128)) { sendPty("\u001b[3~") }
-                        return true
-                    }
-
-                    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean {
-                        repeat(beforeLength.coerceAtMost(128)) { sendPty("\u007f") }
-                        repeat(afterLength.coerceAtMost(128)) { sendPty("\u001b[3~") }
-                        return true
-                    }
-
-                    override fun sendKeyEvent(event: KeyEvent): Boolean {
-                        if (event.action == KeyEvent.ACTION_DOWN) {
-                            when (event.keyCode) {
-                                KeyEvent.KEYCODE_DEL -> { sendPty("\u007f"); return true }
-                                KeyEvent.KEYCODE_FORWARD_DEL -> { sendPty("\u001b[3~"); return true }
-                            }
-                        }
-                        return super.sendKeyEvent(event)
-                    }
-                }
-            }
-        }.apply {
+        input = EditText(this).apply {apply {
             // Keep a real, focusable IME target. The terminal view itself is selectable;
             // this field receives Android soft-keyboard events and forwards them to the PTY.
-            setTextColor(Color.TRANSPARENT)
-            setHintTextColor(Color.TRANSPARENT)
-            textSize = 1f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.LTGRAY)
+            hint = "Type a command and press Enter"
+            textSize = 13f
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            alpha = 0.01f
-            background = null
+            alpha = 1f
+            background = rounded(Color.argb(170, 20, 25, 38), 8)
+            setPadding(dp(12), dp(7), dp(12), dp(7))
             isFocusable = true
             isFocusableInTouchMode = true
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     if (clearingInput) return
+                    if (before > count) repeat(before - count) { sendPty("\u007f") }
                     if (count > 0) sendPty(s?.subSequence(start, start + count)?.toString() ?: "")
-                    post {
-                        clearingInput = true
-                        text?.clear()
-                        clearingInput = false
-                    }
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
             setOnEditorActionListener { _, action, event ->
-                if (event?.keyCode == KeyEvent.KEYCODE_ENTER || action == EditorInfo.IME_ACTION_DONE ||
-                    action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) {
-                    sendPty("\r"); true
+                if (event?.keyCode == KeyEvent.KEYCODE_ENTER || action == EditorInfo.IME_ACTION_DONE || action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) {
+                    sendPty("\r")
+                    clearingInput = true
+                    text?.clear()
+                    clearingInput = false
+                    true
                 } else false
             }
             setOnKeyListener { _, keyCode, event ->
@@ -288,8 +262,6 @@ class TerminalActivity : Activity() {
                     KeyEvent.KEYCODE_DPAD_DOWN -> "\u001b[B"
                     KeyEvent.KEYCODE_DPAD_RIGHT -> "\u001b[C"
                     KeyEvent.KEYCODE_DPAD_LEFT -> "\u001b[D"
-                    KeyEvent.KEYCODE_DEL -> "\u007f"
-                    KeyEvent.KEYCODE_FORWARD_DEL -> "\u001b[3~"
                     KeyEvent.KEYCODE_TAB -> "\t"
                     KeyEvent.KEYCODE_ESCAPE -> "\u001b"
                     KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\u0003" else null
@@ -301,7 +273,7 @@ class TerminalActivity : Activity() {
             }
         }
         output.setOnClickListener { focusTerminalInput() }
-        base.addView(input, LinearLayout.LayoutParams(-1, dp(2)))
+        base.addView(input, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(5) })
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
