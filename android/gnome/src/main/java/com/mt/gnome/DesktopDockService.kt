@@ -8,6 +8,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.IBinder
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -19,6 +21,8 @@ import android.widget.Toast
 class DesktopDockService : Service() {
     private var manager: WindowManager? = null
     private var dock: LinearLayout? = null
+    private var toggle: TextView? = null
+    private var toggleParams: WindowManager.LayoutParams? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -29,16 +33,66 @@ class DesktopDockService : Service() {
             return
         }
         manager = getSystemService(WINDOW_SERVICE) as WindowManager
-        buildDock()
+        buildToggle()
+        if (getSharedPreferences("mt_gnome", MODE_PRIVATE).getBoolean("dock_visible", true)) buildDock()
     }
 
+    private fun buildToggle() {
+        val bubble = TextView(this).apply {
+            text = "≡"; textSize = 23f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            background = rounded(Color.rgb(55, 67, 100), 16)
+            elevation = dp(8).toFloat(); contentDescription = "Show or hide MT app bar"
+            setOnClickListener { toggleDock() }
+        }
+        val params = WindowManager.LayoutParams(
+            dp(46), dp(46), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.START or Gravity.BOTTOM; x = dp(8); y = dp(90) }
+        bubble.setOnTouchListener { view, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> { view.setTag(R.id.mt_dock_drag_x, event.rawX); view.setTag(R.id.mt_dock_drag_y, event.rawY); true }
+                MotionEvent.ACTION_MOVE -> {
+                    val sx = view.getTag(R.id.mt_dock_drag_x) as? Float ?: event.rawX
+                    val sy = view.getTag(R.id.mt_dock_drag_y) as? Float ?: event.rawY
+                    val dx = event.rawX - sx; val dy = event.rawY - sy
+                    if (kotlin.math.abs(dx) + kotlin.math.abs(dy) > dp(8)) {
+                        params.x = (params.x + dx).toInt().coerceAtLeast(0); params.y = (params.y - dy).toInt().coerceAtLeast(0)
+                        try { manager?.updateViewLayout(view, params) } catch (_: Exception) {}
+                        view.setTag(R.id.mt_dock_drag_x, event.rawX); view.setTag(R.id.mt_dock_drag_y, event.rawY)
+                    }; true
+                }
+                MotionEvent.ACTION_UP -> { view.performClick(); true }
+                else -> true
+            }
+        }
+        toggle = bubble; toggleParams = params
+        try { manager?.addView(bubble, params) } catch (_: Exception) { stopSelf() }
+    }
+
+    private fun toggleDock() {
+        if (dock != null) {
+            try { manager?.removeView(dock) } catch (_: Exception) {}
+            dock = null
+            getSharedPreferences("mt_gnome", MODE_PRIVATE).edit().putBoolean("dock_visible", false).apply()
+        } else {
+            buildDock()
+            getSharedPreferences("mt_gnome", MODE_PRIVATE).edit().putBoolean("dock_visible", true).apply()
+        }
+    }
     private fun buildDock() {
+        if (dock != null) return
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             setPadding(dp(5), dp(9), dp(5), dp(9))
             background = rounded(Color.argb(246, 20, 22, 29), 18)
         }
+        val hide = TextView(this).apply {
+            text = "‹"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            contentDescription = "Hide app bar"; setOnClickListener { toggleDock() }
+        }
+        root.addView(hide, LinearLayout.LayoutParams(dp(52), dp(36)))
         fun shortcut(glyph: String, title: String, action: () -> Unit) {
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -136,7 +190,8 @@ class DesktopDockService : Service() {
 
     override fun onDestroy() {
         try { dock?.let { manager?.removeView(it) } } catch (_: Exception) {}
-        dock = null; manager = null
+        try { toggle?.let { manager?.removeView(it) } } catch (_: Exception) {}
+        toggle = null; toggleParams = null; dock = null; manager = null
         super.onDestroy()
     }
 }
