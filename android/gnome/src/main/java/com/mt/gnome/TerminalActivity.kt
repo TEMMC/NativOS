@@ -701,9 +701,22 @@ class TerminalActivity : Activity() {
             try {
                 val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mkdir -p \"\$R/dev/pts\"; mountpoint -q \"\$R/dev/pts\" || mount -t devpts devpts \"\$R/dev/pts\"; ln -sf /dev/pts/ptmx \"\$R/dev/ptmx\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1=root@mt-linux:\\w#; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"
                 val packed = nativeOpenPty(shell, 100, 30)
+                if (packed < 0L) {
+                    val errorNumber = (-packed).toInt()
+                    val reason = when (errorNumber) {
+                        1, 13 -> "permission denied"
+                        2 -> "PTY device not found"
+                        5 -> "PTY I/O error"
+                        19 -> "PTY device unavailable"
+                        22 -> "invalid PTY request"
+                        24 -> "file descriptor limit reached"
+                        else -> "system error $errorNumber"
+                    }
+                    error("PTY allocation failed: $reason (errno $errorNumber)")
+                }
                 val fd = packed.toInt()
                 val pid = (packed ushr 32).toInt()
-                if (fd < 0 || pid <= 0) error("Could not allocate a pseudo-terminal (PTY)")
+                if (fd < 0 || pid <= 0) error("PTY allocation returned an invalid process handle")
                 val descriptor = ParcelFileDescriptor.adoptFd(fd)
                 synchronized(ptyLock) {
                     session.descriptor = descriptor; session.fd = fd; session.pid = pid
