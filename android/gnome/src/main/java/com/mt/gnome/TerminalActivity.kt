@@ -737,9 +737,20 @@ class TerminalActivity : Activity() {
     }
 
     private fun switchSession(session: ShellSession) {
-        activeSession = session; active = session.distroId
+        if (session.closing || session.vtSession == null || session.vtSession?.isRunning != true) {
+            val distroId = session.distroId
+            sessions.remove(session)
+            if (activeSession === session) activeSession = null
+            closeSession(session)
+            startSession(distroId)
+            return
+        }
+        activeSession = session
+        active = session.distroId
         prefs.edit().putString("active_distro", active).apply()
-        showActiveSession(); renderSessionTabs()
+        terminalView.attachSession(session.vtSession!!)
+        showActiveSession()
+        renderSessionTabs()
     }
 
     private fun showActiveSession() {
@@ -795,20 +806,41 @@ class TerminalActivity : Activity() {
     }
 
     private fun sendSession(session: ShellSession, text: String) {
+        val vt = session.vtSession
+        if (session.closing || vt == null || !vt.isRunning) {
+            appendToSession(session, "\n[This terminal process has ended. Open the tab again to start a fresh shell.]\n")
+            return
+        }
         try {
-            session.vtSession?.let { vt -> text.toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) } }
-        } catch (e: Exception) { appendToSession(session, "[Terminal input error] ${e.message}\n") }
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            vt.write(bytes, 0, bytes.size)
+        } catch (e: Exception) {
+            appendToSession(session, "[Terminal input error] ${e.message}\n")
+        }
     }
 
     private fun closeSession(session: ShellSession) {
-        try { session.vtSession?.finishIfRunning() } catch (_: Exception) {}
-        session.vtSession = null
+        if (session.closing) return
+        session.closing = true
         session.starting = false
+        val vt = session.vtSession
+        session.vtSession = null
+        // Termux waits for the child process and closes its PTY asynchronously.
+        // Never SIGKILL a session from the UI thread while its emulator is attached.
+        if (vt != null) Thread({
+            try {
+                if (vt.isRunning) vt.finishIfRunning()
+            } catch (e: Exception) {
+                android.util.Log.w("MT-GNOME", "Could not stop terminal session", e)
+            }
+        }, "MT-Terminal-close").start()
     }
 
     private fun closeAllSessions() {
-        sessions.toList().forEach { closeSession(it) }
-        sessions.clear(); activeSession = null
+        val closing = sessions.toList()
+        sessions.clear()
+        activeSession = null
+        closing.forEach { closeSession(it) }
     }
 
     private fun cleanTerminalText(value: String): String {
