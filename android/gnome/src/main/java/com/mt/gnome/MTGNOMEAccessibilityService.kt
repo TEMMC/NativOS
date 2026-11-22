@@ -27,6 +27,14 @@ class MTGNOMEAccessibilityService : AccessibilityService() {
                 .build()
             return svc.dispatchGesture(gesture, null, Handler(Looper.getMainLooper()))
         }
+        fun longPress(x: Float, y: Float, duration: Long = 650L): Boolean {
+            val svc = active ?: return false
+            val path = Path().apply { moveTo(x, y) }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+                .build()
+            return svc.dispatchGesture(gesture, null, Handler(Looper.getMainLooper()))
+        }
     }
 
     override fun onServiceConnected() { super.onServiceConnected(); active = this }
