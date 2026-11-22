@@ -444,6 +444,13 @@ class GnomeHomeActivity : Activity() {
                 if (Settings.canDrawOverlays(this)) startService(Intent(this, DesktopDockService::class.java).setAction("com.mt.gnome.DOCK_TOGGLE"))
                 else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             }
+            item("Show floating app-bar button","Keep the small show/hide control above other apps") {
+                if (Settings.canDrawOverlays(this)) startService(Intent(this, DesktopDockService::class.java).setAction("com.mt.gnome.DOCK_TOGGLE_BUTTON_SHOW"))
+                else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            }
+            item("Hide floating app-bar button","Remove the small control; the app bar can still be restored from Settings") {
+                startService(Intent(this, DesktopDockService::class.java).setAction("com.mt.gnome.DOCK_TOGGLE_BUTTON_HIDE"))
+            }
             item("Overlay permission","Allow the small dock toggle to remain above other apps") {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             }
