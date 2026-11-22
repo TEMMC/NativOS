@@ -9,6 +9,7 @@
 #include <termios.h>
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 static jlong failure(int error) { return static_cast<jlong>(-(error > 0 ? error : EIO)); }
 
@@ -16,14 +17,15 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_mt_gnome_TerminalActivity_nativeOpenPty(JNIEnv *env, jobject, jstring command, jint columns, jint rows) {
     const char *cmd = env->GetStringUTFChars(command, nullptr);
     if (!cmd) return failure(ENOMEM);
-    // Unlock ptmx directly: grantpt() may fail on Android devpts configurations.
-    int master = open("/dev/ptmx", O_RDWR | O_NOCTTY | O_CLOEXEC);
+    // Use the documented PTY sequence. grantpt() is important on Android:
+    // unlocking ptmx alone does not reliably set the slave device permissions.
+    int master = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (master < 0) { int e = errno; env->ReleaseStringUTFChars(command, cmd); return failure(e); }
-    int unlock = 0;
-    if (ioctl(master, TIOCSPTLCK, &unlock) != 0) { int e = errno; close(master); env->ReleaseStringUTFChars(command, cmd); return failure(e); }
-    int number = -1;
-    if (ioctl(master, TIOCGPTN, &number) != 0) { int e = errno; close(master); env->ReleaseStringUTFChars(command, cmd); return failure(e); }
-    char slaveName[64]; snprintf(slaveName, sizeof(slaveName), "/dev/pts/%d", number);
+    if (grantpt(master) != 0) { int e = errno; close(master); env->ReleaseStringUTFChars(command, cmd); return failure(e); }
+    if (unlockpt(master) != 0) { int e = errno; close(master); env->ReleaseStringUTFChars(command, cmd); return failure(e); }
+    char slaveName[128] = {};
+    int nameResult = ptsname_r(master, slaveName, sizeof(slaveName));
+    if (nameResult != 0) { int e = nameResult > 0 ? nameResult : errno; close(master); env->ReleaseStringUTFChars(command, cmd); return failure(e); }
     int slave = open(slaveName, O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (slave < 0) { int e = errno; close(master); env->ReleaseStringUTFChars(command, cmd); return failure(e); }
     struct termios term{};
