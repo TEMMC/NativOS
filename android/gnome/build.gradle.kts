@@ -50,6 +50,6 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("com.termux:terminal-view:0.118.0")
+    implementation("com.termux.termux-app:terminal-view:0.118.0")
     implementation("org.tukaani:xz:1.10")
 }
