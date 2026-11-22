@@ -2,35 +2,42 @@ package com.mt.gnome
 
 import android.app.Service
 import android.content.Intent
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Point
-import android.graphics.Typeface
 import android.os.IBinder
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.TextView
 import android.widget.Toast
 import kotlin.math.abs
 
-/** System-wide touchpad and pointer overlays. Clicks are sent through the enabled accessibility service. */
+/** Full-screen touch-to-mouse layer. Touches anywhere on the display move and operate the desktop pointer. */
 class PointerOverlayService : Service() {
     private var wm: WindowManager? = null
-    private var pad: View? = null
-    private var cursor: TextView? = null
+    private var touchSurface: View? = null
+    private var cursor: PointerCursorView? = null
     private var cursorParams: WindowManager.LayoutParams? = null
     private var pointerX = 0f
     private var pointerY = 0f
     private var downX = 0f
     private var downY = 0f
-    private var startPointerX = 0f
-    private var startPointerY = 0f
+    private var lastX = 0f
+    private var lastY = 0f
     private var moved = false
+    private var twoFinger = false
     private var lastTwoFingerY = 0f
-    private var twoFingerScroll = 0f
+    private var accumulatedScroll = 0f
+    private var downAt = 0L
+    private var lastTapAt = 0L
     private var accessibilityWarningShown = false
+    private val sensitivity = 1.35f
+    private val doubleTapMs = 280L
+    private val longPressMs = 550L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -41,8 +48,7 @@ class PointerOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         removeOverlays()
-        val mode = getSharedPreferences("mt_gnome", MODE_PRIVATE).getString("input_mode", "direct")
-        if (mode != "trackpad") {
+        if (getSharedPreferences("mt_gnome", MODE_PRIVATE).getString("input_mode", "direct") != "trackpad") {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -52,13 +58,13 @@ class PointerOverlayService : Service() {
             return START_NOT_STICKY
         }
         if (!MTGNOMEAccessibilityService.isConnected()) {
-            Toast.makeText(this, "Pointer movement will work; enable MT-GNOME Pointer in Accessibility settings for clicks", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Enable MT-GNOME Pointer in Accessibility settings for mouse clicks and scrolling", Toast.LENGTH_LONG).show()
         }
         val size = screenSize()
-        pointerX = size.x * 0.52f
-        pointerY = size.y * 0.48f
+        pointerX = size.x * 0.5f
+        pointerY = size.y * 0.5f
         addCursor()
-        addTrackpad()
+        addFullScreenTouchSurface()
         return START_STICKY
     }
 
@@ -74,18 +80,9 @@ class PointerOverlayService : Service() {
     }
 
     private fun addCursor() {
-        val view = TextView(this).apply {
-            text = "➤"
-            textSize = 28f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            setShadowLayer(dp(5).toFloat(), dp(1).toFloat(), dp(2).toFloat(), Color.BLACK)
-            setPadding(0, 0, 0, 0)
-            isClickable = false
-            isFocusable = false
-        }
+        val view = PointerCursorView(this)
         val params = WindowManager.LayoutParams(
-            dp(38), dp(44), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            dp(34), dp(44), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -100,125 +97,151 @@ class PointerOverlayService : Service() {
             cursor = view
             cursorParams = params
         } catch (error: Exception) {
-            Toast.makeText(this, "Could not display pointer: ${error.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Could not display mouse pointer: ${error.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun addTrackpad() {
-        val view = TextView(this).apply {
-            text = "TRACKPAD\n\nMove finger • Tap to click"
-            textSize = 11f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xE62B3040.toInt())
-                cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), 0xAA789BFF.toInt())
-            }
-            setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        downX = event.rawX
-                        downY = event.rawY
-                        startPointerX = pointerX
-                        startPointerY = pointerY
-                        moved = false
-                        true
-                    }
-                    MotionEvent.ACTION_POINTER_DOWN -> {
-                        if (event.pointerCount >= 2) {
-                            lastTwoFingerY = (event.getY(0) + event.getY(1)) / 2f
-                            twoFingerScroll = 0f
-                            moved = true
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        if (event.pointerCount >= 2) {
-                            val averageY = (event.getY(0) + event.getY(1)) / 2f
-                            val delta = averageY - lastTwoFingerY
-                            if (abs(delta) > dp(1)) {
-                                moved = true
-                                twoFingerScroll += delta
-                            }
-                            lastTwoFingerY = averageY
-                        } else {
-                            val dx = event.rawX - downX
-                            val dy = event.rawY - downY
-                            if (abs(dx) + abs(dy) > dp(3)) moved = true
-                            movePointer(startPointerX + dx * 1.8f, startPointerY + dy * 1.8f)
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_POINTER_UP -> {
-                        moved = true
-                        true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        if (!moved) {
-                            sendClick()
-                        } else if (abs(twoFingerScroll) > dp(8) && MTGNOMEAccessibilityService.isConnected()) {
-                            val targetY = (pointerY - twoFingerScroll * 1.4f)
-                                .coerceIn(0f, (screenSize().y - dp(12)).toFloat())
-                            MTGNOMEAccessibilityService.swipe(pointerX, pointerY, pointerX, targetY, 220L)
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_CANCEL -> true
-                    else -> true
-                }
-            }
+    private fun addFullScreenTouchSurface() {
+        val view = View(this).apply {
+            // Transparent and full-screen: every touch position becomes a relative mouse movement.
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = true
+            isFocusable = false
+            setOnTouchListener { _, event -> handleTouch(event) }
         }
         val params = WindowManager.LayoutParams(
-            dp(178), dp(126), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            x = dp(14)
-            y = dp(20)
+            gravity = Gravity.TOP or Gravity.START
         }
         try {
             wm?.addView(view, params)
-            pad = view
+            touchSurface = view
         } catch (error: Exception) {
-            Toast.makeText(this, "Could not display trackpad: ${error.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Could not activate full-screen pointer: ${error.message}", Toast.LENGTH_LONG).show()
             stopSelf()
         }
     }
 
+    private fun handleTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.rawX
+                downY = event.rawY
+                lastX = event.rawX
+                lastY = event.rawY
+                moved = false
+                twoFinger = false
+                accumulatedScroll = 0f
+                downAt = android.os.SystemClock.uptimeMillis()
+                return true
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.pointerCount >= 2) {
+                    twoFinger = true
+                    moved = true
+                    lastTwoFingerY = (event.getY(0) + event.getY(1)) / 2f
+                    accumulatedScroll = 0f
+                }
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (twoFinger && event.pointerCount >= 2) {
+                    val centerY = (event.getY(0) + event.getY(1)) / 2f
+                    val delta = centerY - lastTwoFingerY
+                    accumulatedScroll += delta
+                    lastTwoFingerY = centerY
+                    return true
+                }
+                val dx = event.rawX - lastX
+                val dy = event.rawY - lastY
+                if (abs(event.rawX - downX) + abs(event.rawY - downY) > dp(5)) moved = true
+                if (moved) movePointer(pointerX + dx * sensitivity, pointerY + dy * sensitivity)
+                lastX = event.rawX
+                lastY = event.rawY
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                twoFinger = false
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                val elapsed = android.os.SystemClock.uptimeMillis() - downAt
+                when {
+                    twoFinger && abs(accumulatedScroll) > dp(5) -> sendScroll(accumulatedScroll)
+                    !moved && elapsed >= longPressMs -> sendLongPress()
+                    !moved -> {
+                        val now = android.os.SystemClock.uptimeMillis()
+                        val doubleClick = now - lastTapAt <= doubleTapMs
+                        sendClick()
+                        if (doubleClick) sendClick()
+                        lastTapAt = if (doubleClick) 0L else now
+                    }
+                    else -> Unit
+                }
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                moved = false
+                twoFinger = false
+                return true
+            }
+        }
+        return true
+    }
+
     private fun sendClick() {
         if (!MTGNOMEAccessibilityService.isConnected()) {
-            if (!accessibilityWarningShown) {
-                accessibilityWarningShown = true
-                Toast.makeText(this, "Enable MT-GNOME Pointer in Android Accessibility settings to click", Toast.LENGTH_LONG).show()
-            }
+            warnAccessibility()
             return
         }
-        if (!MTGNOMEAccessibilityService.tap(pointerX, pointerY)) {
-            Toast.makeText(this, "Android rejected the pointer click. Re-enable MT-GNOME Pointer in Accessibility settings.", Toast.LENGTH_SHORT).show()
+        if (!MTGNOMEAccessibilityService.tap(pointerX, pointerY)) warnAccessibility()
+    }
+
+    private fun sendLongPress() {
+        if (!MTGNOMEAccessibilityService.isConnected()) {
+            warnAccessibility()
+            return
         }
+        if (!MTGNOMEAccessibilityService.longPress(pointerX, pointerY)) warnAccessibility()
+    }
+
+    private fun sendScroll(delta: Float) {
+        if (!MTGNOMEAccessibilityService.isConnected()) {
+            warnAccessibility()
+            return
+        }
+        val distance = (delta * 2.0f).coerceIn(-screenSize().y * 0.75f, screenSize().y * 0.75f)
+        val endY = (pointerY - distance).coerceIn(0f, (screenSize().y - dp(12)).toFloat())
+        MTGNOMEAccessibilityService.swipe(pointerX, pointerY, pointerX, endY, 240L)
+    }
+
+    private fun warnAccessibility() {
+        if (accessibilityWarningShown) return
+        accessibilityWarningShown = true
+        Toast.makeText(this, "Enable MT-GNOME Pointer in Android Accessibility settings to use mouse clicks", Toast.LENGTH_LONG).show()
     }
 
     private fun movePointer(x: Float, y: Float) {
         val size = screenSize()
-        pointerX = x.coerceIn(0f, (size.x - dp(12)).coerceAtLeast(0).toFloat())
-        pointerY = y.coerceIn(0f, (size.y - dp(12)).coerceAtLeast(0).toFloat())
+        pointerX = x.coerceIn(0f, (size.x - dp(8)).coerceAtLeast(0).toFloat())
+        pointerY = y.coerceIn(0f, (size.y - dp(8)).coerceAtLeast(0).toFloat())
         cursorParams?.let { params ->
             params.x = pointerX.toInt()
             params.y = pointerY.toInt()
-            try {
-                cursor?.let { wm?.updateViewLayout(it, params) }
-            } catch (_: Exception) {}
+            try { cursor?.let { wm?.updateViewLayout(it, params) } } catch (_: Exception) {}
         }
     }
 
     private fun removeOverlays() {
-        try { pad?.let { wm?.removeView(it) } } catch (_: Exception) {}
+        try { touchSurface?.let { wm?.removeView(it) } } catch (_: Exception) {}
         try { cursor?.let { wm?.removeView(it) } } catch (_: Exception) {}
-        pad = null
+        touchSurface = null
         cursor = null
         cursorParams = null
     }
@@ -229,5 +252,37 @@ class PointerOverlayService : Service() {
         removeOverlays()
         wm = null
         super.onDestroy()
+    }
+
+    /** Conventional desktop arrow cursor, drawn as a crisp black outline with a white body. */
+    private class PointerCursorView(context: android.content.Context) : View(context) {
+        private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.FILL }
+        private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 2.2f
+            strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND
+        }
+        private val arrow = Path().apply {
+            moveTo(2f, 2f)
+            lineTo(2f, 34f)
+            lineTo(10f, 26f)
+            lineTo(16f, 39f)
+            lineTo(22f, 36f)
+            lineTo(16f, 23f)
+            lineTo(28f, 22f)
+            close()
+        }
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            canvas.save()
+            canvas.scale(width / 34f, height / 44f)
+            val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0x99000000.toInt(); style = Paint.Style.STROKE; strokeWidth = 4f
+                strokeJoin = Paint.Join.ROUND
+            }
+            canvas.drawPath(arrow, shadow)
+            canvas.drawPath(arrow, fill)
+            canvas.drawPath(arrow, outline)
+            canvas.restore()
+        }
     }
 }
