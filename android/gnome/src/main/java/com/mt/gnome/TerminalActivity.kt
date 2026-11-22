@@ -43,6 +43,8 @@ import java.net.URL
 import java.security.MessageDigest
 import org.tukaani.xz.XZInputStream
 import com.termux.terminal.TerminalSession
+import com.termux.terminal.TerminalColors
+import com.termux.terminal.TextStyle
 import com.termux.view.TerminalView
 
 /** Minimal ARM64 Linux catalogue and terminal. No desktop environments are installed. */
@@ -107,6 +109,12 @@ class TerminalActivity : Activity() {
         super.onCreate(savedInstanceState)
         active = prefs.getString("active_distro", null)
         hostActivity = this
+        // Termux's VT renderer paints its own default background; changing only the
+        // Android View background leaves an opaque black terminal. Use an alpha
+        // background in the emulator colour scheme so the wallpaper shows through.
+        TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND] =
+            Color.argb(76, 7, 10, 18)
+        TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_CURSOR] = Color.WHITE
         requestedOrientation = when (getSharedPreferences("mt_gnome", MODE_PRIVATE).getString("orientation", "landscape")) {
             "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             "system" -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
