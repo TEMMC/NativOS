@@ -138,6 +138,9 @@ class DesktopDockService : Service() {
             i.putExtra("open_settings", true)
             startActivity(i)
         }
+        shortcut("▤", "Tools") {
+            startActivity(Intent(this, DesktopToolsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
         val line = TextView(this).apply { setBackgroundColor(Color.argb(80,255,255,255)) }
         root.addView(line, LinearLayout.LayoutParams(dp(36), dp(1)).apply { topMargin=dp(4); bottomMargin=dp(4) })
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
