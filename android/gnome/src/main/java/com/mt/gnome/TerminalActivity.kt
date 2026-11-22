@@ -112,7 +112,7 @@ class TerminalActivity : Activity() {
         // Termux's VT renderer paints its own default background; changing only the
         // Android View background leaves an opaque black terminal. Use an alpha
         // background in the emulator colour scheme so the wallpaper shows through.
-        val terminalOpacity = getSharedPreferences("mt_terminal", MODE_PRIVATE)
+        val terminalOpacity = getSharedPreferences("mt_gnome", MODE_PRIVATE)
             .getInt("terminal_opacity", 30).coerceIn(10, 90)
         TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND] =
             Color.argb((terminalOpacity * 255 / 100), 7, 10, 18)
