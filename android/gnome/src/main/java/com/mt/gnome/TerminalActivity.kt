@@ -638,7 +638,7 @@ class TerminalActivity : Activity() {
         val rootPath = root(distroId)
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         try {
-            val shell = """R='$rootPath'; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; mountpoint -q "${'$'}R/dev" || mount --bind /dev "${'$'}R/dev"; mkdir -p "${'$'}R/dev/pts"; mountpoint -q "${'$'}R/dev/pts" || mount -t devpts devpts "${'$'}R/dev/pts"; ln -sf /dev/pts/ptmx "${'$'}R/dev/ptmx"; mountpoint -q "${'$'}R/proc" || mount -t proc proc "${'$'}R/proc"; mountpoint -q "${'$'}R/sys" || mount -t sysfs sysfs "${'$'}R/sys"; chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1="\${'; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
+            val shell = """R='$rootPath'; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; mountpoint -q "${'$'}R/dev" || mount --bind /dev "${'$'}R/dev"; mkdir -p "${'$'}R/dev/pts"; mountpoint -q "${'$'}R/dev/pts" || mount -t devpts devpts "${'$'}R/dev/pts"; ln -sf /dev/pts/ptmx "${'$'}R/dev/ptmx"; mountpoint -q "${'$'}R/proc" || mount -t proc proc "${'$'}R/proc"; mountpoint -q "${'$'}R/sys" || mount -t sysfs sysfs "${'$'}R/sys"; chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor; export PS1="root@mt-gnome:~\${'$'} "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
             // Start from Android's guaranteed system shell, then let its PATH resolve
             // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
             // expose su from /system/xbin or another PATH directory.
@@ -849,7 +849,6 @@ class TerminalActivity : Activity() {
     private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-}} "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
             // Start from Android's guaranteed system shell, then let its PATH resolve
             // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
             // expose su from /system/xbin or another PATH directory.
