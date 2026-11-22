@@ -101,11 +101,15 @@ class DesktopDockService : Service() {
     }
     private fun buildDock() {
         if (dock != null) return
+        val dockPrefs = getSharedPreferences("mt_gnome", MODE_PRIVATE)
+        val dockWidth = dockPrefs.getInt("dock_width", 66).coerceIn(52, 104)
+        val dockOpacity = dockPrefs.getInt("dock_opacity", 96).coerceIn(35, 100)
+        val itemWidth = (dockWidth - 14).coerceIn(38, 90)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             setPadding(dp(5), dp(9), dp(5), dp(9))
-            background = rounded(Color.argb(246, 20, 22, 29), 18)
+            background = rounded(Color.argb(dockOpacity * 255 / 100, 20, 22, 29), 18)
         }
         val hide = TextView(this).apply {
             text = "‹"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
@@ -128,7 +132,7 @@ class DesktopDockService : Service() {
                 text = title; textSize = 8f; gravity = Gravity.CENTER
                 setTextColor(Color.LTGRAY); maxLines = 1
             })
-            root.addView(item, LinearLayout.LayoutParams(dp(52), dp(54)))
+            root.addView(item, LinearLayout.LayoutParams(dp(itemWidth), dp(54)))
         }
         shortcut("⌘", "Terminal") {
             launchComponent("com.mt.gnome", "com.mt.gnome.TerminalActivity")
@@ -168,10 +172,10 @@ class DesktopDockService : Service() {
             list.addView(item, LinearLayout.LayoutParams(dp(52), dp(55)))
         }
         scroll.addView(list)
-        root.addView(scroll, LinearLayout.LayoutParams(dp(54), 0, 1f))
+        root.addView(scroll, LinearLayout.LayoutParams(dp(itemWidth), 0, 1f))
         dock = root
         val params = WindowManager.LayoutParams(
-            dp(66), WindowManager.LayoutParams.MATCH_PARENT,
+            dp(dockWidth), WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
