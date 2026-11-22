@@ -204,26 +204,21 @@ class TerminalActivity : Activity() {
             setTextColor(Color.rgb(113, 205, 170))
             setPadding(dp(4), dp(3), 0, dp(5))
         })
-        output.textSize = 10f
-        output.maxLines = 2
-        output.setTextColor(Color.rgb(150, 205, 190))
+        // Initialise the status view before attaching or configuring it. The old order
+        // dereferenced this lateinit property before assignment on a cold launch.
+        output = TextView(this).apply {
+            text = "MT Terminal  •  select an installed distribution"
+            textSize = 10f
+            setTextColor(Color.rgb(150, 205, 190))
+            maxLines = 2
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            setPadding(dp(4), dp(2), 0, dp(2))
+        }
         base.addView(output, LinearLayout.LayoutParams(-1, dp(24)))
         scroll = FrameLayout(this).apply {
             isFocusable = false
-            background = rounded(Color.argb(24, 8, 11, 17), 9)
+            background = rounded(Color.argb(18, 8, 11, 17), 9)
             setPadding(dp(8), dp(8), dp(8), dp(8))
-        }
-        output = TextView(this).apply {
-            text = "MT Terminal  •  select an installed distribution\n"; textSize = 13f
-            typeface = Typeface.create("monospace", Typeface.NORMAL)
-            setTextColor(Color.rgb(232, 238, 248))
-            highlightColor = Color.argb(150, 65, 110, 180)
-            setTextIsSelectable(true)
-            isFocusable = true
-            isFocusableInTouchMode = true
-            isClickable = true
-            setLineSpacing(dp(2).toFloat(), 1.04f)
-            setPadding(0, dp(2), 0, dp(8))
         }
         terminalView = TerminalView(this, null).apply {
             setBackgroundColor(Color.TRANSPARENT)
@@ -283,9 +278,11 @@ class TerminalActivity : Activity() {
                 if (sequence != null) { sendPty(sequence); true } else false
             }
         }
-        output.setOnClickListener { focusTerminalInput() }
-        input.visibility = View.GONE
-        base.addView(input, LinearLayout.LayoutParams(1, 1))
+        // Keep the IME target visible. Characters are forwarded to the live VT session
+        // as they are typed, while the PTY echo is rendered by TerminalView.
+        input.visibility = View.VISIBLE
+        input.setOnClickListener { input.requestFocus() }
+        base.addView(input, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(5) })
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
