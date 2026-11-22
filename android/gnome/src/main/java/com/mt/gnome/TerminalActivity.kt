@@ -84,11 +84,7 @@ class TerminalActivity : Activity() {
     companion object {
         @Volatile var overlayContent: View? = null
         @Volatile var hostActivity: TerminalActivity? = null
-        init { System.loadLibrary("mtpty") }
     }
-    private external fun nativeOpenPty(command: String, columns: Int, rows: Int): Long
-    private external fun nativeResizePty(fd: Int, columns: Int, rows: Int)
-    private external fun nativeClosePty(fd: Int, pid: Int)
 
     private data class Distro(val id: String, val name: String, val summary: String, val manager: String, val imagePath: String? = null)
     private val distros = listOf(
@@ -659,7 +655,7 @@ class TerminalActivity : Activity() {
     private fun runLinux(command: String) {
         val id = active ?: run { showCatalogue(); return }
         val current = activeSession
-        if (current != null && current.distroId == id && current.output != null && !current.starting) {
+        if (current != null && current.distroId == id && current.vtSession != null && !current.starting) {
             if (command.isNotBlank()) sendPty(command + "\n")
         } else startSession(id, command)
     }
@@ -746,10 +742,11 @@ class TerminalActivity : Activity() {
 
     private fun showActiveSession() {
         val session = activeSession
-        output.text = if (session == null) "No terminal session. Tap + to start one.\n" else session.buffer.toString()
+        output.text = if (session == null) "No terminal session. Tap + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
         busy = session?.starting ?: false
-        input.isEnabled = !busy && session?.output != null
-        scroll.post { scroll.fullScroll(View.FOCUS_DOWN); resizePty() }
+        input.isEnabled = !busy && session?.vtSession != null
+        if (session?.vtSession != null) terminalView.attachSession(session.vtSession!!)
+        scroll.post { resizePty() }
     }
 
     private fun appendToSession(session: ShellSession, value: String) {
