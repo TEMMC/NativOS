@@ -112,8 +112,9 @@ class TerminalActivity : Activity() {
             "system" -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
-        buildUi()
         window.setBackgroundDrawableResource(android.R.color.transparent)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        buildUi()
         windowWidth = (resources.displayMetrics.widthPixels * 0.94f).toInt()
         windowHeight = (resources.displayMetrics.heightPixels * 0.82f).toInt()
         windowX = (resources.displayMetrics.widthPixels - windowWidth) / 2
