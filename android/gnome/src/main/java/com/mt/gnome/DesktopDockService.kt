@@ -31,6 +31,12 @@ class DesktopDockService : Service() {
             "com.mt.gnome.DOCK_SHOW" -> { if (dock == null) buildDock(); getSharedPreferences("mt_gnome", MODE_PRIVATE).edit().putBoolean("dock_visible", true).apply() }
             "com.mt.gnome.DOCK_HIDE" -> { if (dock != null) { try { manager?.removeView(dock) } catch (_: Exception) {}; dock = null }; getSharedPreferences("mt_gnome", MODE_PRIVATE).edit().putBoolean("dock_visible", false).apply() }
             "com.mt.gnome.DOCK_TOGGLE" -> toggleDock()
+            "com.mt.gnome.DOCK_TOGGLE_BUTTON_SHOW" -> { if (toggle == null) buildToggle(); getSharedPreferences("mt_gnome", MODE_PRIVATE).edit().putBoolean("dock_toggle_visible", true).apply() }
+            "com.mt.gnome.DOCK_TOGGLE_BUTTON_HIDE" -> {
+                try { toggle?.let { manager?.removeView(it) } } catch (_: Exception) {}
+                toggle = null; toggleParams = null
+                getSharedPreferences("mt_gnome", MODE_PRIVATE).edit().putBoolean("dock_toggle_visible", false).apply()
+            }
         }
         return START_STICKY
     }
@@ -42,11 +48,12 @@ class DesktopDockService : Service() {
             return
         }
         manager = getSystemService(WINDOW_SERVICE) as WindowManager
-        buildToggle()
+        if (getSharedPreferences("mt_gnome", MODE_PRIVATE).getBoolean("dock_toggle_visible", true)) buildToggle()
         if (getSharedPreferences("mt_gnome", MODE_PRIVATE).getBoolean("dock_visible", true)) buildDock()
     }
 
     private fun buildToggle() {
+        if (toggle != null) return
         val bubble = TextView(this).apply {
             text = "≡"; textSize = 23f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
             background = rounded(Color.rgb(55, 67, 100), 16)
