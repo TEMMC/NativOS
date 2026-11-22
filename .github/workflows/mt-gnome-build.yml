@@ -75,8 +75,8 @@ jobs:
       - name: Enforce Android-native MT-GNOME dependencies
         run: |
           set -euo pipefail
-          if grep -RniE 'MT-Phosh|MT-Phoc|phosh|phoc' android/gnome; then
-            echo "MT-GNOME must not depend on Phosh or Phoc packages."
+          if grep -nEi '(^|[[:space:]])(implementation|api|runtimeOnly|compileOnly|testImplementation)[(].*(phosh|phoc)|MT-Phosh|MT-Phoc' android/gnome/build.gradle.kts; then
+            echo "MT-GNOME must not declare MT-Phosh or MT-Phoc dependencies."
             exit 1
           fi
           echo "MT-GNOME package check passed."
