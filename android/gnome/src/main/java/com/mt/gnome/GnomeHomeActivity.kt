@@ -324,6 +324,8 @@ class GnomeHomeActivity : Activity() {
         val closeButton = label("✕",18,Color.WHITE,true)
         listOf(minimizeButton,maximizeButton,closeButton).forEach { it.gravity=Gravity.CENTER; it.setPadding(dp(9),dp(5),dp(9),dp(5)); heading.addView(it) }
         closeButton.setOnClickListener { dialog.dismiss() }
+        lateinit var body: LinearLayout
+        lateinit var footer: Button
         val restoreSettings = {
             if (minimized) {
                 minimized = false
@@ -378,7 +380,7 @@ class GnomeHomeActivity : Activity() {
         titleText.setOnClickListener { if (minimized) restoreSettings() }
         root.addView(heading)
         root.addView(label("Desktop configuration",10,muted).apply { setPadding(0,dp(4),0,dp(10)) })
-        val body=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+        body=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
         val nav=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(36,38,49),12); setPadding(dp(4),dp(4),dp(4),dp(4)) }
         val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(10),0,0,0) }
         val scroll=ScrollView(this).apply { isFillViewport=true }; scroll.addView(panel)
@@ -472,7 +474,7 @@ class GnomeHomeActivity : Activity() {
         }
         navItem("About") { page("About MT-GNOME","MT-OS desktop shell"); item("Version","0.1.0-alpha") {}; item("Device","${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}") {} }
         page("Appearance","Wallpaper and desktop presentation")
-        val footer = Button(this).apply { text="Close settings"; isAllCaps=false; setOnClickListener { dialog.dismiss() } }
+        footer = Button(this).apply { text="Close settings"; isAllCaps=false; setOnClickListener { dialog.dismiss() } }
         root.addView(footer,LinearLayout.LayoutParams(-1,dp(42)).apply { topMargin=dp(10) })
         val grip = label("◢",16,Color.LTGRAY,true).apply { gravity=Gravity.END; setPadding(dp(10),dp(4),dp(4),dp(2)) }
         root.addView(grip,LinearLayout.LayoutParams(-1,dp(24)))
