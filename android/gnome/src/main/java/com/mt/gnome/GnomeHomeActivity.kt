@@ -142,6 +142,7 @@ class GnomeHomeActivity : Activity() {
         addDockButton(dock, "⌘", "Terminal") { openTerminalWindow() }
         addDockButton(dock, "⚙", "Settings") { showAppearance() }
         addDockButton(dock, "▣", "System") { showQuickSettings() }
+        addDockButton(dock, "▤", "Tools") { startActivity(Intent(this, DesktopToolsActivity::class.java)) }
         dock.addView(View(this).apply { setBackgroundColor(Color.argb(80,255,255,255)) },
             LinearLayout.LayoutParams(dp(38), dp(1)).apply { topMargin=dp(4); bottomMargin=dp(7) })
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL }
