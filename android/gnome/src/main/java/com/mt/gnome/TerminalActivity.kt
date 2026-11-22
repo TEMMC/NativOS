@@ -638,7 +638,218 @@ class TerminalActivity : Activity() {
         val rootPath = root(distroId)
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         try {
-            val shell = """R='$rootPath'; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; mountpoint -q "${'$'}R/dev" || mount --bind /dev "${'$'}R/dev"; mkdir -p "${'$'}R/dev/pts"; mountpoint -q "${'$'}R/dev/pts" || mount -t devpts devpts "${'$'}R/dev/pts"; ln -sf /dev/pts/ptmx "${'$'}R/dev/ptmx"; mountpoint -q "${'$'}R/proc" || mount -t proc proc "${'$'}R/proc"; mountpoint -q "${'$'}R/sys" || mount -t sysfs sysfs "${'$'}R/sys"; chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1="\\${'$'} "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
+            val shell = """R='$rootPath'; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; mountpoint -q "${'$'}R/dev" || mount --bind /dev "${'$'}R/dev"; mkdir -p "${'$'}R/dev/pts"; mountpoint -q "${'$'}R/dev/pts" || mount -t devpts devpts "${'$'}R/dev/pts"; ln -sf /dev/pts/ptmx "${'$'}R/dev/ptmx"; mountpoint -q "${'$'}R/proc" || mount -t proc proc "${'$'}R/proc"; mountpoint -q "${'$'}R/sys" || mount -t sysfs sysfs "${'$'}R/sys"; chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1="\${'; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
+            // Start from Android's guaranteed system shell, then let its PATH resolve
+            // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
+            // expose su from /system/xbin or another PATH directory.
+            // Resolve Magisk's su in the app's inherited Android environment first.
+            // The terminal's restricted PATH previously hid the executable even though
+            // rootExec() could launch it from the application process.
+            val suPath = resolveSuExecutable()
+            val quotedShell = "'" + shell.replace("'", "'\\''") + "'"
+            val suCommand = "exec '$suPath' -c $quotedShell"
+            val inheritedPath = System.getenv("PATH").orEmpty()
+            val terminalPath = listOf(
+                inheritedPath, "/system/bin", "/system/xbin", "/sbin",
+                "/debug_ramdisk", "/vendor/bin", "/product/bin", "/usr/bin", "/bin"
+            ).filter { it.isNotBlank() }.distinct().joinToString(":")
+            val vt = TerminalSession(
+                "/system/bin/sh",
+                "/",
+                arrayOf("/system/bin/sh", "-c", suCommand),
+                arrayOf(
+                    "HOME=/root",
+                    "USER=root",
+                    "LOGNAME=root",
+                    "PATH=$terminalPath",
+                    "TERM=xterm-256color",
+                    "COLORTERM=truecolor"
+                ),
+                2000,
+                terminalBridge
+            )
+            session.vtSession = vt
+            terminalView.attachSession(vt)
+            session.starting = false
+            busy = false
+            terminalView.isEnabled = true
+            terminalView.requestFocus()
+            if (initialCommand.isNotBlank()) (initialCommand + "\n").toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) }
+            renderSessionTabs()
+            terminalView.post { resizePty(); focusTerminalInput() }
+        } catch (e: Exception) {
+            appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
+            session.starting = false
+            if (activeSession === session) { busy = false; terminalView.isEnabled = true }
+            renderSessionTabs()
+        }
+    }
+
+    private fun resolveSuExecutable(): String {
+        val process = Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", "command -v su"))
+        val candidate = process.inputStream.bufferedReader().readText().trim().lineSequence().firstOrNull().orEmpty()
+        val exit = process.waitFor()
+        if (exit == 0 && candidate.isNotBlank()) {
+            if (candidate.startsWith("/")) return candidate
+            val path = System.getenv("PATH").orEmpty().split(":")
+            path.forEach { dir ->
+                val file = File(dir, candidate)
+                if (file.isFile && file.canExecute()) return file.absolutePath
+            }
+        }
+        // Common Magisk/Kernelsu locations are checked as a fallback; never silently
+        // start a shell that will immediately fail with "su: not found".
+        val candidates = listOf(
+            "/system/bin/su", "/system/xbin/su", "/sbin/su",
+            "/debug_ramdisk/su", "/data/adb/magisk/su",
+            "/data/adb/ksu/bin/su"
+        )
+        return candidates.firstOrNull { File(it).canExecute() }
+            ?: throw IllegalStateException("Root executable not found. Open Magisk, grant MT-GNOME superuser access, then retry. App PATH: ${System.getenv("PATH")}")
+    }
+
+    private fun renderSessionTabs() {
+        if (!::sessionTabs.isInitialized) return
+        sessionTabs.removeAllViews()
+        sessions.forEach { session ->
+            val selected = session === activeSession
+            val tab = btn("${session.number} · ${name(session.distroId)}") { switchSession(session) }.apply {
+                textSize = 9f
+                setTextColor(if (selected) Color.rgb(111, 220, 170) else Color.LTGRAY)
+                background = rounded(if (selected) Color.rgb(43, 58, 62) else Color.rgb(31, 36, 49), 8)
+                setOnLongClickListener {
+                    AlertDialog.Builder(this@TerminalActivity).setTitle("Close session ${session.number}?")
+                        .setMessage("This ends processes running in this shell session.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Close") { _, _ ->
+                            closeSession(session); sessions.remove(session)
+                            if (activeSession === session) activeSession = sessions.lastOrNull()
+                            showActiveSession(); renderSessionTabs()
+                        }.show()
+                    true
+                }
+            }
+            sessionTabs.addView(tab, LinearLayout.LayoutParams(-2, dp(34)).apply { rightMargin = dp(5) })
+        }
+        sessionTabs.addView(btn("+") { newSession() }.apply {
+            textSize = 15f; setTextColor(Color.WHITE); background = rounded(Color.rgb(69, 83, 130), 8)
+        }, LinearLayout.LayoutParams(dp(38), dp(34)))
+    }
+
+    private fun switchSession(session: ShellSession) {
+        activeSession = session; active = session.distroId
+        prefs.edit().putString("active_distro", active).apply()
+        showActiveSession(); renderSessionTabs()
+    }
+
+    private fun showActiveSession() {
+        val session = activeSession
+        output.text = if (session == null) "No terminal session. Tap + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
+        busy = session?.starting ?: false
+        terminalView.isEnabled = !busy && session?.vtSession != null
+        if (session?.vtSession != null) terminalView.attachSession(session.vtSession!!)
+        scroll.post { resizePty() }
+    }
+
+    private fun appendToSession(session: ShellSession, value: String) {
+        synchronized(session.buffer) { session.buffer.append(value) }
+        if (activeSession === session && ::output.isInitialized) {
+            output.text = value.trim().takeLast(240)
+        }
+    }
+
+    private fun clearActiveTerminal() {
+        val session = activeSession ?: return
+        synchronized(session.buffer) { session.buffer.setLength(0) }
+        session.vtSession?.reset()
+        output.text = ""
+    }
+
+    private fun selectAllTerminalOutput() {
+        terminalView.showContextMenu()
+    }
+
+    private fun copyTerminalSelection() {
+        terminalView.showContextMenu()
+        Toast.makeText(this, "Long-press terminal text to select and copy", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun pasteClipboard() {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = clipboard.primaryClip
+        if (clip == null || clip.itemCount == 0) { Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show(); return }
+        val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
+        activeSession?.vtSession?.let { session -> value.toByteArray(Charsets.UTF_8).let { session.write(it, 0, it.size) } }
+    }
+
+    private fun resizePty() {
+        if (::terminalView.isInitialized) {
+            terminalView.requestLayout()
+            terminalView.invalidate()
+        }
+    }
+
+    private fun sendPty(text: String) {
+        val session = activeSession ?: return
+        sendSession(session, text)
+    }
+
+    private fun sendSession(session: ShellSession, text: String) {
+        try {
+            session.vtSession?.let { vt -> text.toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) } }
+        } catch (e: Exception) { appendToSession(session, "[Terminal input error] ${e.message}\n") }
+    }
+
+    private fun closeSession(session: ShellSession) {
+        try { session.vtSession?.finishIfRunning() } catch (_: Exception) {}
+        session.vtSession = null
+        session.starting = false
+    }
+
+    private fun closeAllSessions() {
+        sessions.toList().forEach { closeSession(it) }
+        sessions.clear(); activeSession = null
+    }
+
+    private fun cleanTerminalText(value: String): String {
+        var text = value.replace(Regex("\u001B\\][^\u0007]*(?:\u0007|\u001B\\\\)"), "")
+        text = text.replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "")
+        text = text.replace(Regex("\u001B\\([B0]"), "")
+        return text.replace("\r\n", "\n").replace('\r', '\n')
+            .filter { it == '\n' || it == '\t' || it >= ' ' }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (android.provider.Settings.canDrawOverlays(this) && overlayContent?.parent != null) {
+            startService(Intent(this, FloatingTerminalService::class.java))
+        }
+    }
+
+    override fun onDestroy() {
+        overlayContent = null
+        hostActivity = null
+        stopService(Intent(this, FloatingTerminalService::class.java))
+        closeAllSessions()
+        super.onDestroy()
+    }
+
+    private fun rootExec(script: String): Pair<Int, String> {
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "exec 2>&1; $script"))
+        val out = StringBuilder()
+        BufferedReader(InputStreamReader(p.inputStream)).use { r -> var line: String?; while (r.readLine().also { line = it } != null) out.append(line).append('\n') }
+        return Pair(p.waitFor(), out.toString())
+    }
+
+    private fun append(s: String) {
+        val session = activeSession
+        if (session != null) appendToSession(session, s)
+        else if (::output.isInitialized) { output.append(s); }
+    }
+    private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+}} "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
             // Start from Android's guaranteed system shell, then let its PATH resolve
             // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
             // expose su from /system/xbin or another PATH directory.
