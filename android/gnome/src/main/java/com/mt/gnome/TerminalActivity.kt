@@ -697,7 +697,7 @@ class TerminalActivity : Activity() {
             busy = false
             input.isEnabled = true
             terminalView.requestFocus()
-            if (initialCommand.isNotBlank()) vt.write((initialCommand + "\n").toByteArray(Charsets.UTF_8))
+            if (initialCommand.isNotBlank()) (initialCommand + "\n").toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) }
             renderSessionTabs()
             terminalView.post { resizePty(); focusTerminalInput() }
         } catch (e: Exception) {
@@ -779,7 +779,7 @@ class TerminalActivity : Activity() {
         val clip = clipboard.primaryClip
         if (clip == null || clip.itemCount == 0) { Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show(); return }
         val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
-        activeSession?.vtSession?.write(value.toByteArray(Charsets.UTF_8))
+        activeSession?.vtSession?.let { session -> value.toByteArray(Charsets.UTF_8).let { session.write(it, 0, it.size) } }
     }
 
     private fun resizePty() {
@@ -796,7 +796,7 @@ class TerminalActivity : Activity() {
 
     private fun sendSession(session: ShellSession, text: String) {
         try {
-            session.vtSession?.write(text.toByteArray(Charsets.UTF_8))
+            session.vtSession?.let { vt -> text.toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) } }
         } catch (e: Exception) { appendToSession(session, "[Terminal input error] ${e.message}\n") }
     }
 
