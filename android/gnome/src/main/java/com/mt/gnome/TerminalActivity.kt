@@ -245,7 +245,7 @@ class TerminalActivity : Activity() {
             setPadding(dp(12), dp(2), dp(8), dp(2))
         }
         commandPrompt.addView(TextView(this).apply {
-            text = "$"
+            text = "\$"
             textSize = 15f
             setTextColor(Color.rgb(113, 220, 170))
             typeface = Typeface.create("monospace", Typeface.BOLD)
