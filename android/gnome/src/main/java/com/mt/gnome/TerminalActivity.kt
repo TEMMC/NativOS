@@ -849,51 +849,6 @@ class TerminalActivity : Activity() {
     private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-            // Start from Android's guaranteed system shell, then let its PATH resolve
-            // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
-            // expose su from /system/xbin or another PATH directory.
-            // Resolve Magisk's su in the app's inherited Android environment first.
-            // The terminal's restricted PATH previously hid the executable even though
-            // rootExec() could launch it from the application process.
-            val suPath = resolveSuExecutable()
-            val quotedShell = "'" + shell.replace("'", "'\\''") + "'"
-            val suCommand = "exec '$suPath' -c $quotedShell"
-            val inheritedPath = System.getenv("PATH").orEmpty()
-            val terminalPath = listOf(
-                inheritedPath, "/system/bin", "/system/xbin", "/sbin",
-                "/debug_ramdisk", "/vendor/bin", "/product/bin", "/usr/bin", "/bin"
-            ).filter { it.isNotBlank() }.distinct().joinToString(":")
-            val vt = TerminalSession(
-                "/system/bin/sh",
-                "/",
-                arrayOf("/system/bin/sh", "-c", suCommand),
-                arrayOf(
-                    "HOME=/root",
-                    "USER=root",
-                    "LOGNAME=root",
-                    "PATH=$terminalPath",
-                    "TERM=xterm-256color",
-                    "COLORTERM=truecolor"
-                ),
-                2000,
-                terminalBridge
-            )
-            session.vtSession = vt
-            terminalView.attachSession(vt)
-            session.starting = false
-            busy = false
-            terminalView.isEnabled = true
-            terminalView.requestFocus()
-            if (initialCommand.isNotBlank()) (initialCommand + "\n").toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) }
-            renderSessionTabs()
-            terminalView.post { resizePty(); focusTerminalInput() }
-        } catch (e: Exception) {
-            appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
-            session.starting = false
-            if (activeSession === session) { busy = false; terminalView.isEnabled = true }
-            renderSessionTabs()
-        }
-    }
 
     private fun resolveSuExecutable(): String {
         val process = Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", "command -v su"))
