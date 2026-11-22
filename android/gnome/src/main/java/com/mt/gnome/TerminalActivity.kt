@@ -272,14 +272,14 @@ class TerminalActivity : Activity() {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     if (clearingInput) return
-                    if (before > count) repeat(before - count) { sendPty("\\u007f") }
+                    if (before > count) repeat(before - count) { sendPty("\u007f") }
                     if (count > 0) sendPty(s?.subSequence(start, start + count)?.toString() ?: "")
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
             setOnEditorActionListener { _, action, event ->
                 if (event?.keyCode == KeyEvent.KEYCODE_ENTER || action == EditorInfo.IME_ACTION_DONE || action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) {
-                    sendPty("\\r")
+                    sendPty("\r")
                     clearingInput = true
                     text?.clear()
                     clearingInput = false
@@ -289,15 +289,15 @@ class TerminalActivity : Activity() {
             setOnKeyListener { _, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 val sequence = when (keyCode) {
-                    KeyEvent.KEYCODE_DPAD_UP -> "\\u001b[A"
-                    KeyEvent.KEYCODE_DPAD_DOWN -> "\\u001b[B"
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> "\\u001b[C"
-                    KeyEvent.KEYCODE_DPAD_LEFT -> "\\u001b[D"
-                    KeyEvent.KEYCODE_TAB -> "\\t"
-                    KeyEvent.KEYCODE_ESCAPE -> "\\u001b"
-                    KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\\u0003" else null
-                    KeyEvent.KEYCODE_D -> if (event.isCtrlPressed) "\\u0004" else null
-                    KeyEvent.KEYCODE_L -> if (event.isCtrlPressed) "\\u000c" else null
+                    KeyEvent.KEYCODE_DPAD_UP -> "\u001b[A"
+                    KeyEvent.KEYCODE_DPAD_DOWN -> "\u001b[B"
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> "\u001b[C"
+                    KeyEvent.KEYCODE_DPAD_LEFT -> "\u001b[D"
+                    KeyEvent.KEYCODE_TAB -> "\t"
+                    KeyEvent.KEYCODE_ESCAPE -> "\u001b"
+                    KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\u0003" else null
+                    KeyEvent.KEYCODE_D -> if (event.isCtrlPressed) "\u0004" else null
+                    KeyEvent.KEYCODE_L -> if (event.isCtrlPressed) "\u000c" else null
                     else -> null
                 }
                 if (sequence != null) { sendPty(sequence); true } else false
