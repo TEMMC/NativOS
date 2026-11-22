@@ -984,34 +984,4 @@ class TerminalActivity : Activity() {
             .filter { it == '\n' || it == '\t' || it >= ' ' }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (android.provider.Settings.canDrawOverlays(this) && overlayContent?.parent != null) {
-            startService(Intent(this, FloatingTerminalService::class.java))
-        }
-    }
-
-    override fun onDestroy() {
-        overlayContent = null
-        hostActivity = null
-        stopService(Intent(this, FloatingTerminalService::class.java))
-        closeAllSessions()
-        super.onDestroy()
-    }
-
-    private fun rootExec(script: String): Pair<Int, String> {
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "exec 2>&1; $script"))
-        val out = StringBuilder()
-        BufferedReader(InputStreamReader(p.inputStream)).use { r -> var line: String?; while (r.readLine().also { line = it } != null) out.append(line).append('\n') }
-        return Pair(p.waitFor(), out.toString())
-    }
-
-    private fun append(s: String) {
-        val session = activeSession
-        if (session != null) appendToSession(session, s)
-        else if (::output.isInitialized) { output.append(s); }
-    }
-    private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
-    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 }
