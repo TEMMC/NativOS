@@ -12,6 +12,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.view.Gravity
 import android.view.MotionEvent
@@ -671,29 +673,49 @@ class TerminalActivity : Activity() {
             )
             session.vtSession = vt
             terminalView.attachSession(vt)
-            session.starting = false
-            busy = false
-            terminalView.isEnabled = true
+            session.starting = true
+            busy = true
+            terminalView.isEnabled = false
             terminalView.requestFocus()
             renderSessionTabs()
-            // Termux starts its child process asynchronously. An immediate write can
-            // race PTY startup and be silently discarded while the shell PID is zero.
-            terminalView.postDelayed({
-                if (isFinishing || isDestroyed || session.closing || !sessions.contains(session)) return@postDelayed
-                if (activeSession === session) {
-                    terminalView.attachSession(vt)
-                    terminalView.onScreenUpdated()
-                    resizePty()
-                    focusTerminalInput()
-                    if (initialCommand.isNotBlank()) sendSession(session, initialCommand + "\n")
-                }
-            }, 450)
+            awaitSessionReady(session, initialCommand)
         } catch (e: Exception) {
             appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
             session.starting = false
             if (activeSession === session) { busy = false; terminalView.isEnabled = true }
             renderSessionTabs()
         }
+    }
+
+    private fun awaitSessionReady(session: ShellSession, initialCommand: String, attempt: Int = 0) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isFinishing || isDestroyed || session.closing || !sessions.contains(session)) return@postDelayed
+            val vt = session.vtSession
+            val alive = try { vt != null && vt.isRunning } catch (_: Exception) { false }
+            if (alive && vt != null) {
+                session.starting = false
+                if (activeSession === session) {
+                    busy = false
+                    terminalView.isEnabled = true
+                    terminalView.attachSession(vt)
+                    terminalView.onScreenUpdated()
+                    resizePty()
+                    focusTerminalInput()
+                }
+                if (initialCommand.isNotBlank()) sendSession(session, initialCommand + "\n")
+                renderSessionTabs()
+            } else if (attempt < 80) {
+                awaitSessionReady(session, initialCommand, attempt + 1)
+            } else {
+                session.starting = false
+                appendToSession(session, "[Shell startup timed out: the PTY process did not become ready. Close this tab and retry.]\n")
+                if (activeSession === session) {
+                    busy = false
+                    terminalView.isEnabled = false
+                }
+                renderSessionTabs()
+            }
+        }, 100L)
     }
 
     private fun resolveSuExecutable(): String {
@@ -748,20 +770,19 @@ class TerminalActivity : Activity() {
     }
 
     private fun switchSession(session: ShellSession) {
-        val existing = session.vtSession
-        val alive = try { !session.closing && existing != null && existing.isRunning } catch (_: Exception) { false }
-        if (!alive) {
-            val distroId = session.distroId
-            sessions.remove(session)
-            if (activeSession === session) activeSession = null
-            closeSession(session)
-            startSession(distroId)
+        if (session.closing || !sessions.contains(session)) return
+        val vt = session.vtSession
+        val alive = try { vt != null && vt.isRunning } catch (_: Exception) { false }
+        // A session still launching is not a dead session. Keep its tab attached
+        // instead of destroying it and spawning another shell.
+        if (!session.starting && !alive) {
+            appendToSession(session, "\n[This shell has exited. Use + to open a new session.]\n")
             return
         }
         activeSession = session
         active = session.distroId
         prefs.edit().putString("active_distro", active).apply()
-        terminalView.attachSession(session.vtSession!!)
+        if (vt != null) terminalView.attachSession(vt)
         showActiveSession()
         renderSessionTabs()
     }
@@ -770,8 +791,11 @@ class TerminalActivity : Activity() {
         val session = activeSession
         output.text = if (session == null) "No terminal session. Tap + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
         busy = session?.starting ?: false
-        terminalView.isEnabled = !busy && session?.vtSession != null
-        if (session?.vtSession != null) terminalView.attachSession(session.vtSession!!)
+        terminalView.isEnabled = !busy && (session?.vtSession?.let { try { it.isRunning } catch (_: Exception) { false } } == true)
+        if (session?.vtSession != null) {
+            terminalView.attachSession(session.vtSession!!)
+            terminalView.onScreenUpdated()
+        }
         scroll.post { resizePty() }
     }
 
