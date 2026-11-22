@@ -55,12 +55,10 @@ class TerminalActivity : Activity() {
     private val alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/"
     private val prefs by lazy { getSharedPreferences("mt_terminal", MODE_PRIVATE) }
     private lateinit var output: TextView
-    private lateinit var input: EditText
     private lateinit var terminalView: TerminalView
     private lateinit var terminalBridge: MtTerminalBridge
     private lateinit var scroll: FrameLayout
     private var busy = false
-    private var clearingInput = false
     private var active: String? = null
     private var installProgress: ProgressDialog? = null
     private var windowX = 0
@@ -238,74 +236,7 @@ class TerminalActivity : Activity() {
         scroll.addView(terminalView, FrameLayout.LayoutParams(-1, -1))
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
-        val commandPrompt = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = rounded(Color.argb(175, 20, 25, 38), 8)
-            setPadding(dp(12), dp(2), dp(8), dp(2))
-        }
-        commandPrompt.addView(TextView(this).apply {
-            text = "\$"
-            textSize = 15f
-            setTextColor(Color.rgb(113, 220, 170))
-            typeface = Typeface.create("monospace", Typeface.BOLD)
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, dp(9), 0)
-            contentDescription = "Shell prompt"
-        })
-        input = EditText(this).apply {
-            // This is an inline shell prompt, not a detached command form. Keystrokes
-            // are sent to the PTY as typed and the emulator displays the shell echo.
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.LTGRAY)
-            hint = "enter command"
-            textSize = 13f
-            typeface = Typeface.create("monospace", Typeface.NORMAL)
-            setSingleLine(true)
-            imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
-            setPadding(0, dp(7), dp(4), dp(7))
-            isFocusable = true
-            isFocusableInTouchMode = true
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    if (clearingInput) return
-                    if (before > count) repeat(before - count) { sendPty("\u007f") }
-                    if (count > 0) sendPty(s?.subSequence(start, start + count)?.toString() ?: "")
-                }
-                override fun afterTextChanged(s: Editable?) {}
-            })
-            setOnEditorActionListener { _, action, event ->
-                if (event?.keyCode == KeyEvent.KEYCODE_ENTER || action == EditorInfo.IME_ACTION_DONE || action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) {
-                    sendPty("\r")
-                    clearingInput = true
-                    text?.clear()
-                    clearingInput = false
-                    true
-                } else false
-            }
-            setOnKeyListener { _, keyCode, event ->
-                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                val sequence = when (keyCode) {
-                    KeyEvent.KEYCODE_DPAD_UP -> "\u001b[A"
-                    KeyEvent.KEYCODE_DPAD_DOWN -> "\u001b[B"
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> "\u001b[C"
-                    KeyEvent.KEYCODE_DPAD_LEFT -> "\u001b[D"
-                    KeyEvent.KEYCODE_TAB -> "\t"
-                    KeyEvent.KEYCODE_ESCAPE -> "\u001b"
-                    KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\u0003" else null
-                    KeyEvent.KEYCODE_D -> if (event.isCtrlPressed) "\u0004" else null
-                    KeyEvent.KEYCODE_L -> if (event.isCtrlPressed) "\u000c" else null
-                    else -> null
-                }
-                if (sequence != null) { sendPty(sequence); true } else false
-            }
-        }
-        commandPrompt.addView(input, LinearLayout.LayoutParams(0, dp(40), 1f))
-        commandPrompt.setOnClickListener { focusTerminalInput() }
-        base.addView(commandPrompt, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(5) })
+
         terminalView.setOnClickListener { focusTerminalInput() }
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -485,7 +416,7 @@ class TerminalActivity : Activity() {
             runLinux("cat /etc/os-release; id")
             return
         }
-        busy = true; input.isEnabled = false
+        busy = true; terminalView.isEnabled = false
         showInstallProgress("Installing Alpine Linux")
         append("\n[Downloading official Alpine Linux $alpineVersion aarch64 rootfs…]\n")
         Thread {
@@ -511,11 +442,11 @@ class TerminalActivity : Activity() {
                     active = "alpine"; prefs.edit().putString("active_distro", "alpine").apply()
                     append("[Alpine installed. Opening Alpine terminal…]\n")
                     append("Next: run apk update to refresh package indexes.\n")
-                    dismissInstallProgress(); busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
+                    dismissInstallProgress(); busy = false; terminalView.isEnabled = true; runLinux("cat /etc/os-release; id")
                 }
             } catch (e: Exception) {
                 archive?.delete()
-                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
+                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; terminalView.isEnabled = true }
             }
         }.start()
     }
@@ -615,7 +546,7 @@ class TerminalActivity : Activity() {
             runLinux("cat /etc/os-release; id")
             return
         }
-        busy = true; input.isEnabled = false
+        busy = true; terminalView.isEnabled = false
         showInstallProgress("Installing ${d.name}")
         append("\n[Finding latest ARM64 ${d.name} rootfs…]\n")
         Thread {
@@ -652,11 +583,11 @@ class TerminalActivity : Activity() {
                 runOnUiThread {
                     active = d.id; prefs.edit().putString("active_distro", d.id).apply()
                     append("[${d.name} installed. Opening terminal…]\n")
-                    dismissInstallProgress(); busy = false; input.isEnabled = true; runLinux("cat /etc/os-release; id")
+                    dismissInstallProgress(); busy = false; terminalView.isEnabled = true; runLinux("cat /etc/os-release; id")
                 }
             } catch (e: Exception) {
                 rootExec("rm -rf '$staging'")
-                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; input.isEnabled = true }
+                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; terminalView.isEnabled = true }
             } finally { archive?.delete(); tarFile?.delete() }
         }.start()
     }
@@ -670,11 +601,12 @@ class TerminalActivity : Activity() {
     private fun runCommand() { sendPty("\r") }
 
     internal fun focusTerminalInput() {
-        if (::input.isInitialized) {
-            input.requestFocus()
-            input.setSelection(input.text?.length ?: 0)
+        if (::terminalView.isInitialized) {
+            terminalView.isFocusable = true
+            terminalView.isFocusableInTouchMode = true
+            terminalView.requestFocus()
             val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+            imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
         }
     }
 
@@ -702,11 +634,11 @@ class TerminalActivity : Activity() {
         session.buffer.append("MT Terminal • ${name(distroId)}\n")
         sessions.add(session); activeSession = session
         renderSessionTabs(); output.text = session.buffer.toString()
-        busy = true; input.isEnabled = false
+        busy = true; terminalView.isEnabled = false
         val rootPath = root(distroId)
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         try {
-            val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mkdir -p \"\$R/dev/pts\"; mountpoint -q \"\$R/dev/pts\" || mount -t devpts devpts \"\$R/dev/pts\"; ln -sf /dev/pts/ptmx \"\$R/dev/ptmx\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1=debian@mt-gnome:\\\$; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"
+            val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mkdir -p \"\$R/dev/pts\"; mountpoint -q \"\$R/dev/pts\" || mount -t devpts devpts \"\$R/dev/pts\"; ln -sf /dev/pts/ptmx \"\$R/dev/ptmx\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1="\\$ "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"
             // Start from Android's guaranteed system shell, then let its PATH resolve
             // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
             // expose su from /system/xbin or another PATH directory.
@@ -740,7 +672,7 @@ class TerminalActivity : Activity() {
             terminalView.attachSession(vt)
             session.starting = false
             busy = false
-            input.isEnabled = true
+            terminalView.isEnabled = true
             terminalView.requestFocus()
             if (initialCommand.isNotBlank()) (initialCommand + "\n").toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) }
             renderSessionTabs()
@@ -748,7 +680,7 @@ class TerminalActivity : Activity() {
         } catch (e: Exception) {
             appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
             session.starting = false
-            if (activeSession === session) { busy = false; input.isEnabled = true }
+            if (activeSession === session) { busy = false; terminalView.isEnabled = true }
             renderSessionTabs()
         }
     }
@@ -814,7 +746,7 @@ class TerminalActivity : Activity() {
         val session = activeSession
         output.text = if (session == null) "No terminal session. Tap + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
         busy = session?.starting ?: false
-        input.isEnabled = !busy && session?.vtSession != null
+        terminalView.isEnabled = !busy && session?.vtSession != null
         if (session?.vtSession != null) terminalView.attachSession(session.vtSession!!)
         scroll.post { resizePty() }
     }
