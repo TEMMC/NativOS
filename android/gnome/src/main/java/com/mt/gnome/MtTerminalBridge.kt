@@ -73,11 +73,11 @@ class MtTerminalBridge(
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
     override fun onEmulatorSet() = Unit
 
-    override fun logError(tag: String, message: String) = android.util.Log.e(tag, message)
-    override fun logWarn(tag: String, message: String) = android.util.Log.w(tag, message)
-    override fun logInfo(tag: String, message: String) = android.util.Log.i(tag, message)
-    override fun logDebug(tag: String, message: String) = android.util.Log.d(tag, message)
-    override fun logVerbose(tag: String, message: String) = android.util.Log.v(tag, message)
+    override fun logError(tag: String, message: String) { android.util.Log.e(tag, message); Unit }
+    override fun logWarn(tag: String, message: String) { android.util.Log.w(tag, message); Unit }
+    override fun logInfo(tag: String, message: String) { android.util.Log.i(tag, message); Unit }
+    override fun logDebug(tag: String, message: String) { android.util.Log.d(tag, message); Unit }
+    override fun logVerbose(tag: String, message: String) { android.util.Log.v(tag, message); Unit }
     override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) { android.util.Log.e(tag, message, e) }
     override fun logStackTrace(tag: String, e: Exception) { android.util.Log.e(tag, "Terminal error", e) }
 }
