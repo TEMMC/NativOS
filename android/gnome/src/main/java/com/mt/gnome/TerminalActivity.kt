@@ -675,9 +675,19 @@ class TerminalActivity : Activity() {
             busy = false
             terminalView.isEnabled = true
             terminalView.requestFocus()
-            if (initialCommand.isNotBlank()) (initialCommand + "\n").toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) }
             renderSessionTabs()
-            terminalView.post { resizePty(); focusTerminalInput() }
+            // Termux starts its child process asynchronously. An immediate write can
+            // race PTY startup and be silently discarded while the shell PID is zero.
+            terminalView.postDelayed({
+                if (isFinishing || isDestroyed || session.closing || !sessions.contains(session)) return@postDelayed
+                if (activeSession === session) {
+                    terminalView.attachSession(vt)
+                    terminalView.onScreenUpdated()
+                    resizePty()
+                    focusTerminalInput()
+                    if (initialCommand.isNotBlank()) sendSession(session, initialCommand + "\n")
+                }
+            }, 450)
         } catch (e: Exception) {
             appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
             session.starting = false
@@ -738,7 +748,9 @@ class TerminalActivity : Activity() {
     }
 
     private fun switchSession(session: ShellSession) {
-        if (session.closing || session.vtSession == null || session.vtSession?.isRunning != true) {
+        val existing = session.vtSession
+        val alive = try { !session.closing && existing != null && existing.isRunning } catch (_: Exception) { false }
+        if (!alive) {
             val distroId = session.distroId
             sessions.remove(session)
             if (activeSession === session) activeSession = null
@@ -808,7 +820,8 @@ class TerminalActivity : Activity() {
 
     private fun sendSession(session: ShellSession, text: String) {
         val vt = session.vtSession
-        if (session.closing || vt == null || !vt.isRunning) {
+        val alive = try { !session.closing && vt != null && vt.isRunning } catch (_: Exception) { false }
+        if (!alive || vt == null) {
             appendToSession(session, "\n[This terminal process has ended. Open the tab again to start a fresh shell.]\n")
             return
         }
