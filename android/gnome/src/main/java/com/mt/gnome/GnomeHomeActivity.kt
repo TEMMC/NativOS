@@ -311,9 +311,71 @@ class GnomeHomeActivity : Activity() {
     private fun showAppearance() {
         val dialog = Dialog(this)
         val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(27,29,38),20); setPadding(dp(16),dp(14),dp(16),dp(14)) }
-        val heading = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
-        heading.addView(label("MT-GNOME Settings",19,Color.WHITE,true),LinearLayout.LayoutParams(0,-2,1f))
-        heading.addView(label("✕",20,muted,true).apply { setOnClickListener { dialog.dismiss() } })
+        val heading = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; background=rounded(Color.rgb(35,39,52),12); setPadding(dp(10),dp(5),dp(8),dp(5)) }
+        val titleText = label("MT-GNOME Settings",17,Color.WHITE,true)
+        heading.addView(titleText,LinearLayout.LayoutParams(0,dp(40),1f))
+        var minimized = false
+        var maximized = false
+        var savedWidth = (resources.displayMetrics.widthPixels*.94f).toInt()
+        var savedHeight = (resources.displayMetrics.heightPixels*.88f).toInt()
+        var dragStartX=0f; var dragStartY=0f; var dragWindowX=0; var dragWindowY=0
+        val minimizeButton = label("—",19,Color.WHITE,true)
+        val maximizeButton = label("□",18,Color.WHITE,true)
+        val closeButton = label("✕",18,Color.WHITE,true)
+        listOf(minimizeButton,maximizeButton,closeButton).forEach { it.gravity=Gravity.CENTER; it.setPadding(dp(9),dp(5),dp(9),dp(5)); heading.addView(it) }
+        closeButton.setOnClickListener { dialog.dismiss() }
+        val restoreSettings = {
+            if (minimized) {
+                minimized = false
+                body.visibility = View.VISIBLE
+                footer.visibility = View.VISIBLE
+                root.getChildAt(1).visibility = View.VISIBLE
+                dialog.window?.setLayout(savedWidth,savedHeight)
+                titleText.text = "MT-GNOME Settings"
+            }
+        }
+        minimizeButton.setOnClickListener {
+            if (!minimized) {
+                savedWidth = dialog.window?.attributes?.width?.takeIf { it > 0 } ?: savedWidth
+                savedHeight = dialog.window?.attributes?.height?.takeIf { it > 0 } ?: savedHeight
+                minimized = true
+                body.visibility = View.GONE
+                footer.visibility = View.GONE
+                root.getChildAt(1).visibility = View.GONE
+                dialog.window?.setLayout(dp(260),dp(58))
+                titleText.text = "MT-GNOME Settings  ·  minimized"
+            } else restoreSettings()
+        }
+        maximizeButton.setOnClickListener {
+            restoreSettings()
+            if (!maximized) {
+                savedWidth = dialog.window?.attributes?.width?.takeIf { it > 0 } ?: savedWidth
+                savedHeight = dialog.window?.attributes?.height?.takeIf { it > 0 } ?: savedHeight
+                dialog.window?.setLayout(-1,-1)
+                maximized = true
+                maximizeButton.text = "❐"
+            } else {
+                dialog.window?.setLayout(savedWidth,savedHeight)
+                maximized = false
+                maximizeButton.text = "□"
+            }
+        }
+        heading.setOnTouchListener { _, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> { dragStartX=event.rawX; dragStartY=event.rawY; dragWindowX=dialog.window?.attributes?.x ?: 0; dragWindowY=dialog.window?.attributes?.y ?: 0; true }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val w=dialog.window ?: return@setOnTouchListener true
+                    val a=w.attributes
+                    a.gravity=Gravity.TOP or Gravity.START
+                    a.x=(dragWindowX+event.rawX-dragStartX).toInt().coerceAtLeast(0)
+                    a.y=(dragWindowY+event.rawY-dragStartY).toInt().coerceAtLeast(0)
+                    w.attributes=a
+                    true
+                }
+                else -> true
+            }
+        }
+        titleText.setOnClickListener { if (minimized) restoreSettings() }
         root.addView(heading)
         root.addView(label("Desktop configuration",10,muted).apply { setPadding(0,dp(4),0,dp(10)) })
         val body=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
@@ -410,12 +472,29 @@ class GnomeHomeActivity : Activity() {
         }
         navItem("About") { page("About MT-GNOME","MT-OS desktop shell"); item("Version","0.1.0-alpha") {}; item("Device","${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}") {} }
         page("Appearance","Wallpaper and desktop presentation")
-        root.addView(Button(this).apply { text="Close"; isAllCaps=false; setOnClickListener { dialog.dismiss() } },LinearLayout.LayoutParams(-1,dp(42)).apply { topMargin=dp(10) })
+        val footer = Button(this).apply { text="Close settings"; isAllCaps=false; setOnClickListener { dialog.dismiss() } }
+        root.addView(footer,LinearLayout.LayoutParams(-1,dp(42)).apply { topMargin=dp(10) })
+        val grip = label("◢",16,Color.LTGRAY,true).apply { gravity=Gravity.END; setPadding(dp(10),dp(4),dp(4),dp(2)) }
+        root.addView(grip,LinearLayout.LayoutParams(-1,dp(24)))
+        var resizeX=0f; var resizeY=0f; var resizeW=0; var resizeH=0
+        grip.setOnTouchListener { _, event ->
+            when(event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> { resizeX=event.rawX; resizeY=event.rawY; resizeW=dialog.window?.attributes?.width ?: savedWidth; resizeH=dialog.window?.attributes?.height ?: savedHeight; true }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val w=dialog.window ?: return@setOnTouchListener true
+                    val maxW=resources.displayMetrics.widthPixels; val maxH=resources.displayMetrics.heightPixels
+                    w.setLayout((resizeW+event.rawX-resizeX).toInt().coerceIn(dp(280),maxW),(resizeH+event.rawY-resizeY).toInt().coerceIn(dp(220),maxH))
+                    true
+                }
+                else -> true
+            }
+        }
         dialog.setContentView(root); dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels*.94f).toInt(),(resources.displayMetrics.heightPixels*.88f).toInt())
+        dialog.window?.setLayout(savedWidth,savedHeight)
         dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        dialog.window?.attributes=dialog.window?.attributes?.apply { gravity=Gravity.CENTER; dimAmount=.48f }
+        dialog.window?.attributes=dialog.window?.attributes?.apply { gravity=Gravity.CENTER; dimAmount=.42f }
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
     }
 
     override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
