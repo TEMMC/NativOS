@@ -144,7 +144,7 @@ class TerminalActivity : Activity() {
         val base = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(10))
-            background = rounded(Color.argb(188, 17, 20, 29), 16)
+            background = rounded(Color.argb(76, 17, 20, 29), 16)
         }
         val titleBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
