@@ -42,6 +42,15 @@ class DesktopToolsActivity : Activity() {
         scroll.addView(body)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+        // Keep the tools hub inside the MT-GNOME desktop as a resizable-style
+        // application window rather than taking over the entire Android screen.
+        window.setBackgroundDrawableResource(android.R.color.transparent)
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.setGravity(Gravity.CENTER)
+        window.setLayout(
+            (resources.displayMetrics.widthPixels * 0.90f).toInt(),
+            (resources.displayMetrics.heightPixels * 0.84f).toInt()
+        )
         buildTools()
     }
 
