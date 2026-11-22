@@ -468,6 +468,33 @@ class GnomeHomeActivity : Activity() {
             item("Overlay permission","Allow the small dock toggle to remain above other apps") {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             }
+            item("App bar width","Current: ${prefs.getInt("dock_width",66)} dp") {
+                val widths=intArrayOf(52,60,66,76,88,100)
+                AlertDialog.Builder(this).setTitle("App bar width").setSingleChoiceItems(widths.map { "$it dp" }.toTypedArray(), widths.indexOf(prefs.getInt("dock_width",66)).coerceAtLeast(0)) { d,i ->
+                    prefs.edit().putInt("dock_width",widths[i]).apply()
+                    d.dismiss()
+                    if (Settings.canDrawOverlays(this)) {
+                        stopService(Intent(this, DesktopDockService::class.java))
+                        startService(Intent(this, DesktopDockService::class.java))
+                    }
+                    toast("App bar width saved")
+                }.setNegativeButton("Cancel",null).show()
+            }
+            item("App bar opacity","Current: ${prefs.getInt("dock_opacity",96)}%") {
+                val values=intArrayOf(35,50,65,75,85,96,100)
+                AlertDialog.Builder(this).setTitle("App bar opacity").setSingleChoiceItems(values.map { "$it%" }.toTypedArray(), values.indexOf(prefs.getInt("dock_opacity",96)).coerceAtLeast(0)) { d,i ->
+                    prefs.edit().putInt("dock_opacity",values[i]).apply()
+                    d.dismiss()
+                    if (Settings.canDrawOverlays(this)) {
+                        stopService(Intent(this, DesktopDockService::class.java))
+                        startService(Intent(this, DesktopDockService::class.java))
+                    }
+                    toast("App bar opacity saved")
+                }.setNegativeButton("Cancel",null).show()
+            }
+            item("Desktop utilities","Open system monitor, file access, workspaces and quick settings") {
+                startActivity(Intent(this, DesktopToolsActivity::class.java))
+            }
         }
         navItem("Windows") {
             page("Windows","Floating app window behaviour")
