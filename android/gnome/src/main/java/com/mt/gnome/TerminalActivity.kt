@@ -238,33 +238,48 @@ class TerminalActivity : Activity() {
         scroll.addView(terminalView, FrameLayout.LayoutParams(-1, -1))
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
+        val commandPrompt = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(Color.argb(175, 20, 25, 38), 8)
+            setPadding(dp(12), dp(2), dp(8), dp(2))
+        }
+        commandPrompt.addView(TextView(this).apply {
+            text = "$"
+            textSize = 15f
+            setTextColor(Color.rgb(113, 220, 170))
+            typeface = Typeface.create("monospace", Typeface.BOLD)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, dp(9), 0)
+            contentDescription = "Shell prompt"
+        })
         input = EditText(this).apply {
-            // Keep a real, focusable IME target. The terminal view itself is selectable;
-            // this field receives Android soft-keyboard events and forwards them to the PTY.
+            // This is an inline shell prompt, not a detached command form. Keystrokes
+            // are sent to the PTY as typed and the emulator displays the shell echo.
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
-            hint = "Type a command and press Enter"
+            hint = "enter command"
             textSize = 13f
+            typeface = Typeface.create("monospace", Typeface.NORMAL)
             setSingleLine(true)
-            imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            alpha = 1f
-            background = rounded(Color.argb(170, 20, 25, 38), 8)
-            setPadding(dp(12), dp(7), dp(12), dp(7))
+            background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            setPadding(0, dp(7), dp(4), dp(7))
             isFocusable = true
             isFocusableInTouchMode = true
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     if (clearingInput) return
-                    if (before > count) repeat(before - count) { sendPty("\u007f") }
+                    if (before > count) repeat(before - count) { sendPty("\\u007f") }
                     if (count > 0) sendPty(s?.subSequence(start, start + count)?.toString() ?: "")
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
             setOnEditorActionListener { _, action, event ->
                 if (event?.keyCode == KeyEvent.KEYCODE_ENTER || action == EditorInfo.IME_ACTION_DONE || action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) {
-                    sendPty("\r")
+                    sendPty("\\r")
                     clearingInput = true
                     text?.clear()
                     clearingInput = false
@@ -274,25 +289,24 @@ class TerminalActivity : Activity() {
             setOnKeyListener { _, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 val sequence = when (keyCode) {
-                    KeyEvent.KEYCODE_DPAD_UP -> "\u001b[A"
-                    KeyEvent.KEYCODE_DPAD_DOWN -> "\u001b[B"
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> "\u001b[C"
-                    KeyEvent.KEYCODE_DPAD_LEFT -> "\u001b[D"
-                    KeyEvent.KEYCODE_TAB -> "\t"
-                    KeyEvent.KEYCODE_ESCAPE -> "\u001b"
-                    KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\u0003" else null
-                    KeyEvent.KEYCODE_D -> if (event.isCtrlPressed) "\u0004" else null
-                    KeyEvent.KEYCODE_L -> if (event.isCtrlPressed) "\u000c" else null
+                    KeyEvent.KEYCODE_DPAD_UP -> "\\u001b[A"
+                    KeyEvent.KEYCODE_DPAD_DOWN -> "\\u001b[B"
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> "\\u001b[C"
+                    KeyEvent.KEYCODE_DPAD_LEFT -> "\\u001b[D"
+                    KeyEvent.KEYCODE_TAB -> "\\t"
+                    KeyEvent.KEYCODE_ESCAPE -> "\\u001b"
+                    KeyEvent.KEYCODE_C -> if (event.isCtrlPressed) "\\u0003" else null
+                    KeyEvent.KEYCODE_D -> if (event.isCtrlPressed) "\\u0004" else null
+                    KeyEvent.KEYCODE_L -> if (event.isCtrlPressed) "\\u000c" else null
                     else -> null
                 }
                 if (sequence != null) { sendPty(sequence); true } else false
             }
         }
-        // Keep the IME target visible. Characters are forwarded to the live VT session
-        // as they are typed, while the PTY echo is rendered by TerminalView.
-        input.visibility = View.VISIBLE
-        input.setOnClickListener { input.requestFocus() }
-        base.addView(input, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(5) })
+        commandPrompt.addView(input, LinearLayout.LayoutParams(0, dp(40), 1f))
+        commandPrompt.setOnClickListener { focusTerminalInput() }
+        base.addView(commandPrompt, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(5) })
+        terminalView.setOnClickListener { focusTerminalInput() }
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -655,10 +669,13 @@ class TerminalActivity : Activity() {
 
     private fun runCommand() { sendPty("\r") }
 
-    private fun focusTerminalInput() {
-        terminalView.requestFocus()
-        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
+    internal fun focusTerminalInput() {
+        if (::input.isInitialized) {
+            input.requestFocus()
+            input.setSelection(input.text?.length ?: 0)
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun runLinux(command: String) {
@@ -693,8 +710,17 @@ class TerminalActivity : Activity() {
             // Start from Android's guaranteed system shell, then let its PATH resolve
             // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
             // expose su from /system/xbin or another PATH directory.
+            // Resolve Magisk's su in the app's inherited Android environment first.
+            // The terminal's restricted PATH previously hid the executable even though
+            // rootExec() could launch it from the application process.
+            val suPath = resolveSuExecutable()
             val quotedShell = "'" + shell.replace("'", "'\\''") + "'"
-            val suCommand = "exec su -c $quotedShell"
+            val suCommand = "exec '$suPath' -c $quotedShell"
+            val inheritedPath = System.getenv("PATH").orEmpty()
+            val terminalPath = listOf(
+                inheritedPath, "/system/bin", "/system/xbin", "/sbin",
+                "/debug_ramdisk", "/vendor/bin", "/product/bin", "/usr/bin", "/bin"
+            ).filter { it.isNotBlank() }.distinct().joinToString(":")
             val vt = TerminalSession(
                 "/system/bin/sh",
                 "/",
@@ -703,7 +729,7 @@ class TerminalActivity : Activity() {
                     "HOME=/root",
                     "USER=root",
                     "LOGNAME=root",
-                    "PATH=/system/bin:/system/xbin:/sbin:/vendor/bin:/product/bin:/usr/bin:/bin",
+                    "PATH=$terminalPath",
                     "TERM=xterm-256color",
                     "COLORTERM=truecolor"
                 ),
@@ -725,6 +751,29 @@ class TerminalActivity : Activity() {
             if (activeSession === session) { busy = false; input.isEnabled = true }
             renderSessionTabs()
         }
+    }
+
+    private fun resolveSuExecutable(): String {
+        val process = Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", "command -v su"))
+        val candidate = process.inputStream.bufferedReader().readText().trim().lineSequence().firstOrNull().orEmpty()
+        val exit = process.waitFor()
+        if (exit == 0 && candidate.isNotBlank()) {
+            if (candidate.startsWith("/")) return candidate
+            val path = System.getenv("PATH").orEmpty().split(":")
+            path.forEach { dir ->
+                val file = File(dir, candidate)
+                if (file.isFile && file.canExecute()) return file.absolutePath
+            }
+        }
+        // Common Magisk/Kernelsu locations are checked as a fallback; never silently
+        // start a shell that will immediately fail with "su: not found".
+        val candidates = listOf(
+            "/system/bin/su", "/system/xbin/su", "/sbin/su",
+            "/debug_ramdisk/su", "/data/adb/magisk/su",
+            "/data/adb/ksu/bin/su"
+        )
+        return candidates.firstOrNull { File(it).canExecute() }
+            ?: throw IllegalStateException("Root executable not found. Open Magisk, grant MT-GNOME superuser access, then retry. App PATH: ${System.getenv("PATH")}")
     }
 
     private fun renderSessionTabs() {
