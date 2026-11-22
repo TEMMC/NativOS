@@ -54,9 +54,16 @@ class MtTerminalBridge(
 
     override fun onScale(scale: Float): Float = scale
     override fun onSingleTapUp(e: MotionEvent) {
-        terminalView.requestFocus()
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
+        // The shell prompt is the IME target; tapping the VT screen returns focus
+        // to that inline "$" command line so typed characters reach the PTY.
+        val host = context as? TerminalActivity
+        if (host != null) {
+            host.focusTerminalInput()
+        } else {
+            terminalView.requestFocus()
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
     override fun shouldBackButtonBeMappedToEscape(): Boolean = true
     override fun shouldEnforceCharBasedInput(): Boolean = false
