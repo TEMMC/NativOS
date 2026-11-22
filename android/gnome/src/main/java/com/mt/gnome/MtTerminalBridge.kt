@@ -22,7 +22,7 @@ class MtTerminalBridge(
         terminalView.setTerminalViewClient(this)
         terminalView.isFocusable = true
         terminalView.isFocusableInTouchMode = true
-        terminalView.setTextSize(context.getSharedPreferences("mt_terminal", Context.MODE_PRIVATE).getInt("terminal_font_size", 13).coerceIn(9, 24))
+        terminalView.setTextSize(context.getSharedPreferences("mt_gnome", Context.MODE_PRIVATE).getInt("terminal_font_size", 13).coerceIn(9, 24))
         terminalView.setKeepScreenOn(false)
     }
 
