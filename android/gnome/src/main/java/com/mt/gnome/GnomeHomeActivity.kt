@@ -377,7 +377,20 @@ class GnomeHomeActivity : Activity() {
                 else -> true
             }
         }
-        titleText.setOnClickListener { if (minimized) restoreSettings() }
+        titleText.setOnTouchListener { _, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> { dragStartX=event.rawX; dragStartY=event.rawY; dragWindowX=dialog.window?.attributes?.x ?: 0; dragWindowY=dialog.window?.attributes?.y ?: 0; true }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val w=dialog.window ?: return@setOnTouchListener true
+                    val a=w.attributes; a.gravity=Gravity.TOP or Gravity.START
+                    a.x=(dragWindowX+event.rawX-dragStartX).toInt().coerceAtLeast(0)
+                    a.y=(dragWindowY+event.rawY-dragStartY).toInt().coerceAtLeast(0)
+                    w.attributes=a; true
+                }
+                android.view.MotionEvent.ACTION_UP -> { if (minimized) restoreSettings(); true }
+                else -> true
+            }
+        }
         root.addView(heading)
         root.addView(label("Desktop configuration",10,muted).apply { setPadding(0,dp(4),0,dp(10)) })
         body=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
