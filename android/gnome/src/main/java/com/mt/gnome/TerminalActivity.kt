@@ -41,6 +41,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import org.tukaani.xz.XZInputStream
+import com.termux.terminal.TerminalSession
+import com.termux.view.TerminalView
 
 /** Minimal ARM64 Linux catalogue and terminal. No desktop environments are installed. */
 class TerminalActivity : Activity() {
@@ -51,6 +53,8 @@ class TerminalActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("mt_terminal", MODE_PRIVATE) }
     private lateinit var output: TextView
     private lateinit var input: EditText
+    private lateinit var terminalView: TerminalView
+    private lateinit var terminalBridge: MtTerminalBridge
     private lateinit var scroll: ScrollView
     private var busy = false
     private var clearingInput = false
@@ -68,7 +72,8 @@ class TerminalActivity : Activity() {
         val number: Int, val distroId: String, val buffer: StringBuilder = StringBuilder(),
         var descriptor: ParcelFileDescriptor? = null, var input: FileInputStream? = null,
         var output: FileOutputStream? = null, var fd: Int = -1, var pid: Int = -1,
-        var starting: Boolean = true
+        var starting: Boolean = true,
+        var vtSession: TerminalSession? = null
     )
     private val sessions = mutableListOf<ShellSession>()
     private var activeSession: ShellSession? = null
@@ -201,6 +206,8 @@ class TerminalActivity : Activity() {
             setTextColor(Color.rgb(113, 205, 170))
             setPadding(dp(4), dp(3), 0, dp(5))
         })
+        output.textSize = 10f
+        output.maxLines = 3
         scroll = ScrollView(this).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = true
@@ -220,7 +227,12 @@ class TerminalActivity : Activity() {
             setLineSpacing(dp(2).toFloat(), 1.04f)
             setPadding(0, dp(2), 0, dp(8))
         }
-        scroll.addView(output)
+        terminalView = TerminalView(this, null).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+        }
+        terminalBridge = MtTerminalBridge(this, terminalView)
+        scroll.addView(terminalView, ScrollView.LayoutParams(-1, -1))
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
         input = EditText(this).apply {
@@ -274,7 +286,8 @@ class TerminalActivity : Activity() {
             }
         }
         output.setOnClickListener { focusTerminalInput() }
-        base.addView(input, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(5) })
+        input.visibility = View.GONE
+        base.addView(input, LinearLayout.LayoutParams(1, 1))
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -638,9 +651,9 @@ class TerminalActivity : Activity() {
     private fun runCommand() { sendPty("\r") }
 
     private fun focusTerminalInput() {
-        input.requestFocus()
+        terminalView.requestFocus()
         val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
     }
 
     private fun runLinux(command: String) {
@@ -670,69 +683,31 @@ class TerminalActivity : Activity() {
         busy = true; input.isEnabled = false
         val rootPath = root(distroId)
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
-        Thread {
-            try {
-                val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mkdir -p \"\$R/dev/pts\"; mountpoint -q \"\$R/dev/pts\" || mount -t devpts devpts \"\$R/dev/pts\"; ln -sf /dev/pts/ptmx \"\$R/dev/ptmx\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1=root@mt-linux:\\w#; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"
-                val packed = nativeOpenPty(shell, 100, 30)
-                if (packed < 0L) {
-                    val errorNumber = (-packed).toInt()
-                    val reason = when (errorNumber) {
-                        1, 13 -> "permission denied"
-                        2 -> "PTY device not found"
-                        5 -> "PTY I/O error"
-                        19 -> "PTY device unavailable"
-                        22 -> "invalid PTY request"
-                        24 -> "file descriptor limit reached"
-                        else -> "system error $errorNumber"
-                    }
-                    error("PTY allocation failed: $reason (errno $errorNumber)")
-                }
-                val fd = packed.toInt()
-                val pid = (packed ushr 32).toInt()
-                if (fd < 0 || pid <= 0) error("PTY allocation returned an invalid process handle")
-                val descriptor = ParcelFileDescriptor.adoptFd(fd)
-                synchronized(ptyLock) {
-                    session.descriptor = descriptor; session.fd = fd; session.pid = pid
-                    session.input = FileInputStream(descriptor.fileDescriptor)
-                    session.output = FileOutputStream(descriptor.fileDescriptor)
-                    session.starting = false
-                }
-                val reader = Thread {
-                    val chars = CharArray(4096)
-                    try {
-                        val decoder = InputStreamReader(session.input ?: return@Thread, Charsets.UTF_8)
-                        while (true) {
-                            val count = decoder.read(chars)
-                            if (count < 0) break
-                            val clean = cleanTerminalText(String(chars, 0, count))
-                            if (clean.isNotEmpty()) runOnUiThread { if (!isFinishing) appendToSession(session, clean) }
-                        }
-                    } catch (_: Exception) {
-                    } finally {
-                        runOnUiThread {
-                            appendToSession(session, "\n[Shell session ended]\n")
-                            closeSession(session); renderSessionTabs()
-                        }
-                    }
-                }
-                reader.start()
-                runOnUiThread {
-                    if (activeSession === session) {
-                        busy = false; input.isEnabled = true; focusTerminalInput()
-                        if (initialCommand.isNotBlank()) sendSession(session, initialCommand + "\n")
-                        scroll.post { resizePty() }
-                    }
-                    renderSessionTabs()
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    appendToSession(session, "[PTY startup failed] ${e.message}\n")
-                    session.starting = false
-                    if (activeSession === session) { busy = false; input.isEnabled = true; focusTerminalInput() }
-                    renderSessionTabs()
-                }
-            }
-        }.start()
+        try {
+            val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mkdir -p \"\$R/dev/pts\"; mountpoint -q \"\$R/dev/pts\" || mount -t devpts devpts \"\$R/dev/pts\"; ln -sf /dev/pts/ptmx \"\$R/dev/ptmx\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1=root@mt-linux:\\w#; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"
+            val vt = TerminalSession(
+                "/system/bin/su",
+                "/",
+                arrayOf("su", "-c", shell),
+                arrayOf("HOME=/root", "PATH=/system/bin:/system/xbin:/usr/bin:/bin", "TERM=xterm-256color", "COLORTERM=truecolor"),
+                2000,
+                terminalBridge
+            )
+            session.vtSession = vt
+            terminalView.attachSession(vt)
+            session.starting = false
+            busy = false
+            input.isEnabled = true
+            terminalView.requestFocus()
+            if (initialCommand.isNotBlank()) vt.write((initialCommand + "\n").toByteArray(Charsets.UTF_8))
+            renderSessionTabs()
+            terminalView.post { resizePty(); focusTerminalInput() }
+        } catch (e: Exception) {
+            appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
+            session.starting = false
+            if (activeSession === session) { busy = false; input.isEnabled = true }
+            renderSessionTabs()
+        }
     }
 
     private fun renderSessionTabs() {
@@ -780,33 +755,24 @@ class TerminalActivity : Activity() {
     private fun appendToSession(session: ShellSession, value: String) {
         synchronized(session.buffer) { session.buffer.append(value) }
         if (activeSession === session && ::output.isInitialized) {
-            output.append(value); scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+            output.append(value.trimEnd()); scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
         }
     }
 
     private fun clearActiveTerminal() {
         val session = activeSession ?: return
         synchronized(session.buffer) { session.buffer.setLength(0) }
+        session.vtSession?.reset()
         output.text = ""
     }
 
     private fun selectAllTerminalOutput() {
-        val text = output.text
-        if (text is Spannable && text.isNotEmpty()) {
-            Selection.setSelection(text, 0, text.length)
-            Toast.makeText(this, "All terminal output selected", Toast.LENGTH_SHORT).show()
-        }
+        terminalView.showContextMenu()
     }
 
     private fun copyTerminalSelection() {
-        val text = output.text
-        val start = Selection.getSelectionStart(text)
-        val end = Selection.getSelectionEnd(text)
-        val hasSelection = start >= 0 && end >= 0 && start != end
-        val selected = if (hasSelection) text.subSequence(minOf(start, end), maxOf(start, end)).toString() else text.toString()
-        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("MT Terminal", selected))
-        Toast.makeText(this, if (hasSelection) "Selection copied" else "Terminal output copied", Toast.LENGTH_SHORT).show()
+        terminalView.showContextMenu()
+        Toast.makeText(this, "Long-press terminal text to select and copy", Toast.LENGTH_SHORT).show()
     }
 
     private fun pasteClipboard() {
@@ -814,17 +780,14 @@ class TerminalActivity : Activity() {
         val clip = clipboard.primaryClip
         if (clip == null || clip.itemCount == 0) { Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show(); return }
         val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
-        sendPty(value)
+        activeSession?.vtSession?.write(value.toByteArray(Charsets.UTF_8))
     }
 
     private fun resizePty() {
-        val session = activeSession ?: return
-        if (session.fd < 0 || scroll.width <= 0 || scroll.height <= 0) return
-        val charWidth = (output.textSize * 0.62f).coerceAtLeast(1f)
-        val lineHeight = (output.textSize * 1.45f).coerceAtLeast(1f)
-        val usableWidth = (scroll.width - scroll.paddingLeft - scroll.paddingRight).coerceAtLeast(1)
-        val usableHeight = (scroll.height - scroll.paddingTop - scroll.paddingBottom).coerceAtLeast(1)
-        try { nativeResizePty(session.fd, (usableWidth / charWidth).toInt().coerceIn(20, 240), (usableHeight / lineHeight).toInt().coerceIn(5, 100)) } catch (_: Exception) {}
+        if (::terminalView.isInitialized) {
+            terminalView.requestLayout()
+            terminalView.invalidate()
+        }
     }
 
     private fun sendPty(text: String) {
@@ -834,19 +797,14 @@ class TerminalActivity : Activity() {
 
     private fun sendSession(session: ShellSession, text: String) {
         try {
-            synchronized(ptyLock) { session.output?.write(text.toByteArray(Charsets.UTF_8)); session.output?.flush() }
-        } catch (e: Exception) { appendToSession(session, "[PTY input error] ${e.message}\n") }
+            session.vtSession?.write(text.toByteArray(Charsets.UTF_8))
+        } catch (e: Exception) { appendToSession(session, "[Terminal input error] ${e.message}\n") }
     }
 
     private fun closeSession(session: ShellSession) {
-        val fd: Int; val pid: Int
-        synchronized(ptyLock) {
-            fd = session.fd; pid = session.pid
-            try { session.descriptor?.close() } catch (_: Exception) {}
-            session.descriptor = null; session.input = null; session.output = null
-            session.fd = -1; session.pid = -1
-        }
-        if (pid > 0) nativeClosePty(fd, pid)
+        try { session.vtSession?.finishIfRunning() } catch (_: Exception) {}
+        session.vtSession = null
+        session.starting = false
     }
 
     private fun closeAllSessions() {
