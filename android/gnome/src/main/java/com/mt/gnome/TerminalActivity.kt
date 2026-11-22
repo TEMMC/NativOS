@@ -688,11 +688,23 @@ class TerminalActivity : Activity() {
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         try {
             val shell = "R='$rootPath'; test -x \"\$R/bin/sh\" || exit 20; mkdir -p \"\$R/dev\" \"\$R/proc\" \"\$R/sys\" \"\$R/run\"; mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\"; mkdir -p \"\$R/dev/pts\"; mountpoint -q \"\$R/dev/pts\" || mount -t devpts devpts \"\$R/dev/pts\"; ln -sf /dev/pts/ptmx \"\$R/dev/ptmx\"; mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\"; mountpoint -q \"\$R/sys\" || mount -t sysfs sysfs \"\$R/sys\"; chroot \"\$R\" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor PS1=root@mt-linux:\\w#; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"
+            // Start from Android's guaranteed system shell, then let its PATH resolve
+            // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
+            // expose su from /system/xbin or another PATH directory.
+            val quotedShell = "'" + shell.replace("'", "'\\''") + "'"
+            val suCommand = "exec su -c $quotedShell"
             val vt = TerminalSession(
-                "/system/bin/su",
+                "/system/bin/sh",
                 "/",
-                arrayOf("su", "-c", shell),
-                arrayOf("HOME=/root", "PATH=/system/bin:/system/xbin:/usr/bin:/bin", "TERM=xterm-256color", "COLORTERM=truecolor"),
+                arrayOf("/system/bin/sh", "-c", suCommand),
+                arrayOf(
+                    "HOME=/root",
+                    "USER=root",
+                    "LOGNAME=root",
+                    "PATH=/system/bin:/system/xbin:/sbin:/vendor/bin:/product/bin:/usr/bin:/bin",
+                    "TERM=xterm-256color",
+                    "COLORTERM=truecolor"
+                ),
                 2000,
                 terminalBridge
             )
