@@ -27,6 +27,7 @@ import android.text.TextWatcher
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ScrollView
@@ -55,7 +56,7 @@ class TerminalActivity : Activity() {
     private lateinit var input: EditText
     private lateinit var terminalView: TerminalView
     private lateinit var terminalBridge: MtTerminalBridge
-    private lateinit var scroll: ScrollView
+    private lateinit var scroll: FrameLayout
     private var busy = false
     private var clearingInput = false
     private var active: String? = null
@@ -203,13 +204,13 @@ class TerminalActivity : Activity() {
             setPadding(dp(4), dp(3), 0, dp(5))
         })
         output.textSize = 10f
-        output.maxLines = 3
-        scroll = ScrollView(this).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = true
-            setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET)
+        output.maxLines = 2
+        output.setTextColor(Color.rgb(150, 205, 190))
+        base.addView(output, LinearLayout.LayoutParams(-1, dp(24)))
+        scroll = FrameLayout(this).apply {
+            isFocusable = false
             background = rounded(Color.argb(24, 8, 11, 17), 9)
-            setPadding(dp(13), dp(12), dp(13), dp(12))
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         output = TextView(this).apply {
             text = "MT Terminal  •  select an installed distribution\n"; textSize = 13f
@@ -228,7 +229,7 @@ class TerminalActivity : Activity() {
             setPadding(dp(6), dp(6), dp(6), dp(6))
         }
         terminalBridge = MtTerminalBridge(this, terminalView)
-        scroll.addView(terminalView, ScrollView.LayoutParams(-1, -1))
+        scroll.addView(terminalView, FrameLayout.LayoutParams(-1, -1))
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
         input = EditText(this).apply {
@@ -752,7 +753,7 @@ class TerminalActivity : Activity() {
     private fun appendToSession(session: ShellSession, value: String) {
         synchronized(session.buffer) { session.buffer.append(value) }
         if (activeSession === session && ::output.isInitialized) {
-            output.append(value.trimEnd()); scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+            output.text = value.trim().takeLast(240)
         }
     }
 
@@ -842,7 +843,7 @@ class TerminalActivity : Activity() {
     private fun append(s: String) {
         val session = activeSession
         if (session != null) appendToSession(session, s)
-        else if (::output.isInitialized) { output.append(s); scroll.post { scroll.fullScroll(View.FOCUS_DOWN) } }
+        else if (::output.isInitialized) { output.append(s); }
     }
     private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
