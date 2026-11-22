@@ -3,6 +3,7 @@ package com.mt.gnome
 import android.app.Activity
 import android.content.ClipData
 import android.content.Intent
+import android.net.Uri
 import android.content.ClipboardManager
 import android.app.AlertDialog
 import android.app.ProgressDialog
@@ -30,6 +31,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -376,7 +378,7 @@ class TerminalActivity : Activity() {
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
         panel.addView(TextView(this).apply { text = "Choose your Linux distribution"; textSize = 20f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD })
         panel.addView(TextView(this).apply {
-            text = "First launch: choose a minimal ARM64 Linux system to download. After installation, MT Terminal opens that distribution automatically. All systems are command-line-only: no desktop environments or graphical bundles."
+            text = "Choose a minimal ARM64 Linux system. Installed distributions have a three-dot menu for backup and removal. Backups are saved to a location you choose."
             textSize = 12f; setTextColor(Color.LTGRAY); setPadding(0, dp(6), 0, dp(10))
         })
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -385,19 +387,1045 @@ class TerminalActivity : Activity() {
             val installed = exists(d.id)
             val state = when { installed -> "INSTALLED • OPEN"; d.id == "alpine" -> "OFFICIAL DOWNLOAD"; else -> "ARM64 DOWNLOAD" }
             val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
+                orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(8), dp(10))
                 background = rounded(Color.rgb(34, 42, 58), 12)
-                setOnClickListener {
-                    when { installed -> select(d.id); d.id == "alpine" -> confirmAlpine(); else -> confirmLxc(d) }
-                }
             }
-            card.addView(TextView(this).apply { text = "${d.name}   ·   $state"; textSize = 14f
-                setTextColor(if (installed || d.id == "alpine") Color.rgb(111, 220, 170) else Color.WHITE); typeface = Typeface.DEFAULT_BOLD })
-            card.addView(TextView(this).apply { text = "${d.summary}\nPackage manager: ${d.manager}"; textSize = 11f; setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, 0) })
+            val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val title = TextView(this).apply {
+                text = "${d.name}   ·   $state"; textSize = 14f
+                setTextColor(if (installed || d.id == "alpine") Color.rgb(111, 220, 170) else Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, dp(3), 0, dp(3))
+                setOnClickListener { openDistroEntry(d, installed) }
+            }
+            header.addView(title, LinearLayout.LayoutParams(0, dp(42), 1f))
+            if (installed) {
+                val more = btn("⋮") {}
+                more.textSize = 20f
+                more.setOnClickListener { showDistroActions(more, d) }
+                header.addView(more, LinearLayout.LayoutParams(dp(44), dp(42)))
+            }
+            card.addView(header)
+            card.addView(TextView(this).apply {
+                text = "${d.summary}\nPackage manager: ${d.manager}"
+                textSize = 11f; setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, 0)
+                setOnClickListener { openDistroEntry(d, installed) }
+            })
             list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         }
         inner.addView(list); panel.addView(inner, LinearLayout.LayoutParams(-1, dp(365)))
         AlertDialog.Builder(this).setView(panel).setNegativeButton("Close", null).show()
+    }
+
+    private fun openDistroEntry(d: Distro, installed: Boolean) {
+        when { installed -> select(d.id); d.id == "alpine" -> confirmAlpine(); else -> confirmLxc(d) }
+    }
+
+    private fun showDistroActions(anchor: View, distro: Distro) {
+        PopupMenu(this, anchor).apply {
+            menu.add("Backup").setOnMenuItemClickListener { chooseBackupDestination(distro); true }
+            menu.add("Delete").setOnMenuItemClickListener { confirmDeleteDistro(distro); true }
+            show()
+        }
+    }
+
+    private fun confirmDeleteDistro(distro: Distro) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete ${distro.name}?")
+            .setMessage("This permanently removes the installed ${distro.name} root filesystem and its files from this device. Back up anything important first.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ -> deleteDistro(distro) }
+            .show()
+    }
+
+    private fun deleteDistro(distro: Distro) {
+        if (busy) { Toast.makeText(this, "Wait for the current operation to finish", Toast.LENGTH_SHORT).show(); return }
+        val target = root(distro.id)
+        if (!target.startsWith("/data/local/mt-os/distros/") && target != alpineRoot) {
+            Toast.makeText(this, "Unsafe distribution path; deletion cancelled", Toast.LENGTH_LONG).show()
+            return
+        }
+        Thread {
+            try {
+                sessions.filter { it.distroId == distro.id }.toList().forEach { closeSession(it); sessions.remove(it) }
+                if (activeSession?.distroId == distro.id) activeSession = sessions.lastOrNull()
+                val script = "set -e; T='$target'; case \"$T\" in /data/local/mt-os/distros/*|$alpineRoot) ;; *) exit 40;; esac; umount \"$T/dev/pts\" 2>/dev/null || true; umount \"$T/dev\" 2>/dev/null || true; umount \"$T/proc\" 2>/dev/null || true; umount \"$T/sys\" 2>/dev/null || true; rm -rf -- \"$T\" \"${'
+
+    private fun confirmAlpine() {
+        AlertDialog.Builder(this).setTitle("Download Alpine Linux?")
+            .setMessage("Download the official Alpine Linux $alpineVersion aarch64 mini root filesystem and its SHA-256 checksum from dl-cdn.alpinelinux.org. MT Terminal verifies the archive before extracting it into its own directory. No desktop environment is installed.")
+            .setPositiveButton("Download and install") { _, _ -> installAlpine() }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun installAlpine() {
+        if (busy) return
+        // Re-check immediately before installing so an existing distro is never downloaded again.
+        if (exists("alpine")) {
+            active = "alpine"
+            prefs.edit().putString("active_distro", "alpine").apply()
+            append("\n[Alpine is already installed. Reusing the existing root filesystem; no download needed.]\n")
+            runLinux("cat /etc/os-release; id")
+            return
+        }
+        busy = true; terminalView.isEnabled = false
+        showInstallProgress("Installing Alpine Linux")
+        append("\n[Downloading official Alpine Linux $alpineVersion aarch64 rootfs…]\n")
+        Thread {
+            var archive: File? = null
+            try {
+                val url = alpineUrl + archiveName
+                val checksumText = fetchText(url + ".sha256")
+                val expected = Regex("(?i)\\b[0-9a-f]{64}\\b").find(checksumText)?.value
+                    ?: error("Official SHA-256 file did not contain a digest")
+                val archiveFile = File(cacheDir, archiveName)
+                archive = archiveFile
+                download(url, archiveFile) { done, total -> updateInstallProgress("Downloading Alpine", done, total) }
+                runOnUiThread { updateInstallPhase("Verifying archive checksum…"); append("[Download complete. Verifying SHA-256…]\n") }
+                val actual = sha256(archiveFile)
+                if (!actual.equals(expected, true)) { archive.delete(); throw SecurityException("Checksum mismatch; archive deleted.") }
+                runOnUiThread { updateInstallPhase("Extracting root filesystem…"); append("[Checksum verified. Extracting minimal root filesystem…]\n") }
+                val a = archiveFile.absolutePath
+                val script = "set -e; mkdir -p '$alpineRoot'; tar -xzf '$a' -C '$alpineRoot'; mkdir -p '$alpineRoot/etc/apk' '$alpineRoot/dev' '$alpineRoot/proc' '$alpineRoot/sys' '$alpineRoot/run'; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$alpineRoot/etc/resolv.conf'; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > '$alpineRoot/etc/apk/repositories'; test -x '$alpineRoot/bin/sh' && test -d '$alpineRoot/usr' && test -d '$alpineRoot/etc'; printf '%s\\n' 'alpine:${alpineVersion}' > '$alpineRoot/.mt-installed'"
+                val result = rootExec(script)
+                archiveFile.delete()
+                if (result.first != 0) error("Root extraction failed: ${result.second}")
+                runOnUiThread {
+                    active = "alpine"; prefs.edit().putString("active_distro", "alpine").apply()
+                    append("[Alpine installed. Opening Alpine terminal…]\n")
+                    append("Next: run apk update to refresh package indexes.\n")
+                    dismissInstallProgress(); busy = false; terminalView.isEnabled = true; runLinux("cat /etc/os-release; id")
+                }
+            } catch (e: Exception) {
+                archive?.delete()
+                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; terminalView.isEnabled = true }
+            }
+        }.start()
+    }
+
+    private fun fetchText(address: String): String {
+        val c = (URL(address).openConnection() as HttpURLConnection).apply { connectTimeout = 45000; readTimeout = 90000; instanceFollowRedirects = true }
+        try { if (c.responseCode !in 200..299) error("Checksum server HTTP ${c.responseCode}"); return c.inputStream.bufferedReader().use { it.readText() } }
+        finally { c.disconnect() }
+    }
+
+    private fun download(address: String, file: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        val c = (URL(address).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 45000; readTimeout = 120000; instanceFollowRedirects = true
+        }
+        try {
+            if (c.responseCode !in 200..299) error("Download server HTTP ${c.responseCode}")
+            val total = c.contentLengthLong
+            c.inputStream.use { source ->
+                file.outputStream().buffered().use { target ->
+                    val buffer = ByteArray(64 * 1024)
+                    var done = 0L
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        target.write(buffer, 0, count)
+                        done += count
+                        onProgress(done, total)
+                    }
+                }
+            }
+            if (!file.isFile || file.length() == 0L) error("Downloaded archive is empty")
+            if (total > 0 && file.length() != total) error("Download ended early: received ${file.length()} of $total bytes")
+        } finally { c.disconnect() }
+    }
+
+    private fun showInstallProgress(title: String) {
+        runOnUiThread {
+            installProgress = ProgressDialog(this).apply {
+                setTitle(title)
+                setMessage("Preparing download…")
+                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                max = 100
+                progress = 0
+                setCancelable(false)
+                setCanceledOnTouchOutside(false)
+                show()
+            }
+        }
+    }
+
+    private fun updateInstallProgress(phase: String, done: Long, total: Long) {
+        runOnUiThread {
+            installProgress?.let { dialog ->
+                dialog.setMessage(if (total > 0) "$phase — ${done / 1048576} / ${total / 1048576} MB" else "$phase — ${done / 1048576} MB")
+                if (total > 0) { dialog.isIndeterminate = false; dialog.progress = ((done * 100L) / total).toInt().coerceIn(0, 100) }
+                else dialog.isIndeterminate = true
+            }
+        }
+    }
+
+    private fun updateInstallPhase(message: String) {
+        runOnUiThread { installProgress?.let { it.isIndeterminate = true; it.setMessage(message) } }
+    }
+
+    private fun dismissInstallProgress() {
+        installProgress?.dismiss()
+        installProgress = null
+    }
+
+    private fun sha256(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { s -> val b = ByteArray(65536); while (true) { val n = s.read(b); if (n < 0) break; md.update(b, 0, n) } }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun select(id: String) {
+        active = id
+        prefs.edit().putString("active_distro", id).apply()
+        startSession(id, "cat /etc/os-release; id")
+    }
+
+    private fun confirmLxc(d: Distro) {
+        AlertDialog.Builder(this).setTitle("Download ${d.name}?")
+            .setMessage("Download the latest ARM64 root filesystem from the Linux Containers image server. MT Terminal verifies the published SHA-256 checksum before extracting it into an isolated directory. This is a minimal command-line container rootfs, not a bootable phone image. No desktop environment is installed.")
+            .setPositiveButton("Download and install") { _, _ -> installLxc(d) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun installLxc(d: Distro) {
+        val imagePath = d.imagePath ?: return
+        if (busy) return
+        // Re-check immediately before downloading in case the catalogue state was stale.
+        if (exists(d.id)) {
+            active = d.id
+            prefs.edit().putString("active_distro", d.id).apply()
+            append("\n[${d.name} is already installed. Reusing the existing root filesystem; no download needed.]\n")
+            runLinux("cat /etc/os-release; id")
+            return
+        }
+        busy = true; terminalView.isEnabled = false
+        showInstallProgress("Installing ${d.name}")
+        append("\n[Finding latest ARM64 ${d.name} rootfs…]\n")
+        Thread {
+            var archive: File? = null
+            var tarFile: File? = null
+            val target = root(d.id)
+            val staging = "$target.installing"
+            try {
+                val base = "https://images.linuxcontainers.org/images/$imagePath/"
+                val listing = fetchText(base)
+                val stamps = Regex("href=[\\\"'](20[0-9]{6}_[0-9]{2}(?::|%3A)[0-9]{2}/)[\\\"']").findAll(listing).map { it.groupValues[1] }.toList().sorted()
+                val stamp = stamps.lastOrNull() ?: error("No published ARM64 build found for this distribution")
+                val buildUrl = base + stamp
+                val sums = fetchText(buildUrl + "SHA256SUMS")
+                val expected = Regex("(?im)^([0-9a-f]{64})\\s+\\*?rootfs\\.tar\\.xz\\s*$").find(sums)?.groupValues?.get(1)
+                    ?: error("Published SHA256SUMS does not include rootfs.tar.xz")
+                val archiveFile = File(cacheDir, "${d.id}-rootfs.tar.xz")
+                val tarOutput = File(cacheDir, "${d.id}-rootfs.tar")
+                archive = archiveFile
+                tarFile = tarOutput
+                runOnUiThread { updateInstallPhase("Downloading ${d.name} rootfs…") }
+                download(buildUrl + "rootfs.tar.xz", archiveFile) { done, total -> updateInstallProgress("Downloading ${d.name}", done, total) }
+                runOnUiThread { updateInstallPhase("Verifying published SHA-256…"); append("[Verifying published SHA-256…]\n") }
+                if (!sha256(archiveFile).equals(expected, true)) throw SecurityException("SHA-256 mismatch; archive rejected")
+                runOnUiThread { updateInstallPhase("Checksum verified. Decompressing rootfs…"); append("[Checksum verified. Decompressing rootfs…]\n") }
+                XZInputStream(archiveFile.inputStream().buffered()).use { xz ->
+                    tarOutput.outputStream().buffered().use { out -> xz.copyTo(out) }
+                }
+                runOnUiThread { updateInstallPhase("Extracting and preparing Linux filesystem…") }
+                val a = tarOutput.absolutePath
+                val script = "set -e; TARGET='$target'; STAGING='$staging'; BACKUP=\"\${TARGET}.previous\"; mkdir -p \"\${TARGET%/*}\"; rm -rf \"\$STAGING\" \"\$BACKUP\"; mkdir -p \"\$STAGING\"; tar -xpf '$a' -C \"\$STAGING\"; test -x \"\$STAGING/bin/sh\"; mkdir -p \"\$STAGING/etc\" \"\$STAGING/dev\" \"\$STAGING/proc\" \"\$STAGING/sys\" \"\$STAGING/run\"; rm -f \"\$STAGING/etc/resolv.conf\"; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > \"\$STAGING/etc/resolv.conf\"; if [ -e \"\$TARGET\" ]; then mv \"\$TARGET\" \"\$BACKUP\"; fi; if mv \"\$STAGING\" \"\$TARGET\"; then rm -rf \"\$BACKUP\"; else [ ! -e \"\$BACKUP\" ] || mv \"\$BACKUP\" \"\$TARGET\"; exit 1; fi; test -x \"\$TARGET/bin/sh\" && test -f \"\$TARGET/etc/os-release\" && test -d \"\$TARGET/usr/bin\" && test -d \"\$TARGET/var\"; printf '%s\\n' '${d.id}' > \"\$TARGET/.mt-installed\""
+                val result = rootExec(script)
+                if (result.first != 0) error("Root extraction failed: ${result.second}")
+                runOnUiThread {
+                    active = d.id; prefs.edit().putString("active_distro", d.id).apply()
+                    append("[${d.name} installed. Opening terminal…]\n")
+                    dismissInstallProgress(); busy = false; terminalView.isEnabled = true; runLinux("cat /etc/os-release; id")
+                }
+            } catch (e: Exception) {
+                rootExec("rm -rf '$staging'")
+                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; terminalView.isEnabled = true }
+            } finally { archive?.delete(); tarFile?.delete() }
+        }.start()
+    }
+
+    private fun unavailable(d: Distro) {
+        AlertDialog.Builder(this).setTitle(d.name)
+            .setMessage("The official ARM64 minimal rootfs downloader and its verification method are not integrated yet. This distribution is not downloadable in this build; MT-OS will not use an unverified archive.")
+            .setPositiveButton("OK", null).show()
+    }
+
+    private fun runCommand() { sendPty("\r") }
+
+    internal fun focusTerminalInput() {
+        if (::terminalView.isInitialized) {
+            terminalView.isFocusable = true
+            terminalView.isFocusableInTouchMode = true
+            terminalView.requestFocus()
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun runLinux(command: String) {
+        val id = active ?: run { showCatalogue(); return }
+        val current = activeSession
+        if (current != null && current.distroId == id && current.vtSession != null && !current.starting) {
+            if (command.isNotBlank()) sendPty(command + "\n")
+        } else startSession(id, command)
+    }
+
+    private fun newSession() {
+        val id = active
+        if (id == null || !exists(id)) { showCatalogue(); return }
+        startSession(id)
+    }
+
+    private fun startSession(distroId: String, initialCommand: String = "") {
+        if (!exists(distroId)) {
+            append("\n[${name(distroId)} is not installed. Choose an installed distribution first.]\n")
+            showCatalogue()
+            return
+        }
+        val session = ShellSession(++sessionCounter, distroId)
+        session.buffer.append("MT Terminal • ${name(distroId)}\n")
+        sessions.add(session); activeSession = session
+        renderSessionTabs(); output.text = session.buffer.toString()
+        busy = true; terminalView.isEnabled = false
+        val rootPath = root(distroId)
+        appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
+        try {
+            val shell = """R='$rootPath'; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; mountpoint -q "${'$'}R/dev" || mount --bind /dev "${'$'}R/dev"; mkdir -p "${'$'}R/dev/pts"; mountpoint -q "${'$'}R/dev/pts" || mount -t devpts devpts "${'$'}R/dev/pts"; ln -sf /dev/pts/ptmx "${'$'}R/dev/ptmx"; mountpoint -q "${'$'}R/proc" || mount -t proc proc "${'$'}R/proc"; mountpoint -q "${'$'}R/sys" || mount -t sysfs sysfs "${'$'}R/sys"; chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor; export PS1="root@mt-gnome:~\${'$'} "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
+            // Start from Android's guaranteed system shell, then let its PATH resolve
+            // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
+            // expose su from /system/xbin or another PATH directory.
+            // Resolve Magisk's su in the app's inherited Android environment first.
+            // The terminal's restricted PATH previously hid the executable even though
+            // rootExec() could launch it from the application process.
+            val suPath = resolveSuExecutable()
+            val quotedShell = "'" + shell.replace("'", "'\\''") + "'"
+            val suCommand = "exec '$suPath' -c $quotedShell"
+            val inheritedPath = System.getenv("PATH").orEmpty()
+            val terminalPath = listOf(
+                inheritedPath, "/system/bin", "/system/xbin", "/sbin",
+                "/debug_ramdisk", "/vendor/bin", "/product/bin", "/usr/bin", "/bin"
+            ).filter { it.isNotBlank() }.distinct().joinToString(":")
+            val vt = TerminalSession(
+                "/system/bin/sh",
+                "/",
+                arrayOf("/system/bin/sh", "-c", suCommand),
+                arrayOf(
+                    "HOME=/root",
+                    "USER=root",
+                    "LOGNAME=root",
+                    "PATH=$terminalPath",
+                    "TERM=xterm-256color",
+                    "COLORTERM=truecolor"
+                ),
+                2000,
+                terminalBridge
+            )
+            session.vtSession = vt
+            terminalView.attachSession(vt)
+            session.starting = false
+            busy = false
+            terminalView.isEnabled = true
+            terminalView.requestFocus()
+            if (initialCommand.isNotBlank()) (initialCommand + "\n").toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) }
+            renderSessionTabs()
+            terminalView.post { resizePty(); focusTerminalInput() }
+        } catch (e: Exception) {
+            appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
+            session.starting = false
+            if (activeSession === session) { busy = false; terminalView.isEnabled = true }
+            renderSessionTabs()
+        }
+    }
+
+    private fun resolveSuExecutable(): String {
+        val process = Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", "command -v su"))
+        val candidate = process.inputStream.bufferedReader().readText().trim().lineSequence().firstOrNull().orEmpty()
+        val exit = process.waitFor()
+        if (exit == 0 && candidate.isNotBlank()) {
+            if (candidate.startsWith("/")) return candidate
+            val path = System.getenv("PATH").orEmpty().split(":")
+            path.forEach { dir ->
+                val file = File(dir, candidate)
+                if (file.isFile && file.canExecute()) return file.absolutePath
+            }
+        }
+        // Common Magisk/Kernelsu locations are checked as a fallback; never silently
+        // start a shell that will immediately fail with "su: not found".
+        val candidates = listOf(
+            "/system/bin/su", "/system/xbin/su", "/sbin/su",
+            "/debug_ramdisk/su", "/data/adb/magisk/su",
+            "/data/adb/ksu/bin/su"
+        )
+        return candidates.firstOrNull { File(it).canExecute() }
+            ?: throw IllegalStateException("Root executable not found. Open Magisk, grant MT-GNOME superuser access, then retry. App PATH: ${System.getenv("PATH")}")
+    }
+
+    private fun renderSessionTabs() {
+        if (!::sessionTabs.isInitialized) return
+        sessionTabs.removeAllViews()
+        sessions.forEach { session ->
+            val selected = session === activeSession
+            val tab = btn("${session.number} · ${name(session.distroId)}") { switchSession(session) }.apply {
+                textSize = 9f
+                setTextColor(if (selected) Color.rgb(111, 220, 170) else Color.LTGRAY)
+                background = rounded(if (selected) Color.rgb(43, 58, 62) else Color.rgb(31, 36, 49), 8)
+                setOnLongClickListener {
+                    AlertDialog.Builder(this@TerminalActivity).setTitle("Close session ${session.number}?")
+                        .setMessage("This ends processes running in this shell session.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Close") { _, _ ->
+                            closeSession(session); sessions.remove(session)
+                            if (activeSession === session) activeSession = sessions.lastOrNull()
+                            showActiveSession(); renderSessionTabs()
+                        }.show()
+                    true
+                }
+            }
+            sessionTabs.addView(tab, LinearLayout.LayoutParams(-2, dp(34)).apply { rightMargin = dp(5) })
+        }
+        sessionTabs.addView(btn("+") { newSession() }.apply {
+            textSize = 15f; setTextColor(Color.WHITE); background = rounded(Color.rgb(69, 83, 130), 8)
+        }, LinearLayout.LayoutParams(dp(38), dp(34)))
+    }
+
+    private fun switchSession(session: ShellSession) {
+        activeSession = session; active = session.distroId
+        prefs.edit().putString("active_distro", active).apply()
+        showActiveSession(); renderSessionTabs()
+    }
+
+    private fun showActiveSession() {
+        val session = activeSession
+        output.text = if (session == null) "No terminal session. Tap + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
+        busy = session?.starting ?: false
+        terminalView.isEnabled = !busy && session?.vtSession != null
+        if (session?.vtSession != null) terminalView.attachSession(session.vtSession!!)
+        scroll.post { resizePty() }
+    }
+
+    private fun appendToSession(session: ShellSession, value: String) {
+        synchronized(session.buffer) { session.buffer.append(value) }
+        if (activeSession === session && ::output.isInitialized) {
+            output.text = value.trim().takeLast(240)
+        }
+    }
+
+    private fun clearActiveTerminal() {
+        val session = activeSession ?: return
+        synchronized(session.buffer) { session.buffer.setLength(0) }
+        session.vtSession?.reset()
+        output.text = ""
+    }
+
+    private fun selectAllTerminalOutput() {
+        terminalView.showContextMenu()
+    }
+
+    private fun copyTerminalSelection() {
+        terminalView.showContextMenu()
+        Toast.makeText(this, "Long-press terminal text to select and copy", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun pasteClipboard() {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = clipboard.primaryClip
+        if (clip == null || clip.itemCount == 0) { Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show(); return }
+        val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
+        activeSession?.vtSession?.let { session -> value.toByteArray(Charsets.UTF_8).let { session.write(it, 0, it.size) } }
+    }
+
+    private fun resizePty() {
+        if (::terminalView.isInitialized) {
+            terminalView.requestLayout()
+            terminalView.invalidate()
+        }
+    }
+
+    private fun sendPty(text: String) {
+        val session = activeSession ?: return
+        sendSession(session, text)
+    }
+
+    private fun sendSession(session: ShellSession, text: String) {
+        try {
+            session.vtSession?.let { vt -> text.toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) } }
+        } catch (e: Exception) { appendToSession(session, "[Terminal input error] ${e.message}\n") }
+    }
+
+    private fun closeSession(session: ShellSession) {
+        try { session.vtSession?.finishIfRunning() } catch (_: Exception) {}
+        session.vtSession = null
+        session.starting = false
+    }
+
+    private fun closeAllSessions() {
+        sessions.toList().forEach { closeSession(it) }
+        sessions.clear(); activeSession = null
+    }
+
+    private fun cleanTerminalText(value: String): String {
+        var text = value.replace(Regex("\u001B\\][^\u0007]*(?:\u0007|\u001B\\\\)"), "")
+        text = text.replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "")
+        text = text.replace(Regex("\u001B\\([B0]"), "")
+        return text.replace("\r\n", "\n").replace('\r', '\n')
+            .filter { it == '\n' || it == '\t' || it >= ' ' }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (android.provider.Settings.canDrawOverlays(this) && overlayContent?.parent != null) {
+            startService(Intent(this, FloatingTerminalService::class.java))
+        }
+    }
+
+    override fun onDestroy() {
+        overlayContent = null
+        hostActivity = null
+        stopService(Intent(this, FloatingTerminalService::class.java))
+        closeAllSessions()
+        super.onDestroy()
+    }
+
+    private fun rootExec(script: String): Pair<Int, String> {
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "exec 2>&1; $script"))
+        val out = StringBuilder()
+        BufferedReader(InputStreamReader(p.inputStream)).use { r -> var line: String?; while (r.readLine().also { line = it } != null) out.append(line).append('\n') }
+        return Pair(p.waitFor(), out.toString())
+    }
+
+    private fun append(s: String) {
+        val session = activeSession
+        if (session != null) appendToSession(session, s)
+        else if (::output.isInitialized) { output.append(s); }
+    }
+    private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+
+}}T.installing\" \"${'
+
+    private fun confirmAlpine() {
+        AlertDialog.Builder(this).setTitle("Download Alpine Linux?")
+            .setMessage("Download the official Alpine Linux $alpineVersion aarch64 mini root filesystem and its SHA-256 checksum from dl-cdn.alpinelinux.org. MT Terminal verifies the archive before extracting it into its own directory. No desktop environment is installed.")
+            .setPositiveButton("Download and install") { _, _ -> installAlpine() }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun installAlpine() {
+        if (busy) return
+        // Re-check immediately before installing so an existing distro is never downloaded again.
+        if (exists("alpine")) {
+            active = "alpine"
+            prefs.edit().putString("active_distro", "alpine").apply()
+            append("\n[Alpine is already installed. Reusing the existing root filesystem; no download needed.]\n")
+            runLinux("cat /etc/os-release; id")
+            return
+        }
+        busy = true; terminalView.isEnabled = false
+        showInstallProgress("Installing Alpine Linux")
+        append("\n[Downloading official Alpine Linux $alpineVersion aarch64 rootfs…]\n")
+        Thread {
+            var archive: File? = null
+            try {
+                val url = alpineUrl + archiveName
+                val checksumText = fetchText(url + ".sha256")
+                val expected = Regex("(?i)\\b[0-9a-f]{64}\\b").find(checksumText)?.value
+                    ?: error("Official SHA-256 file did not contain a digest")
+                val archiveFile = File(cacheDir, archiveName)
+                archive = archiveFile
+                download(url, archiveFile) { done, total -> updateInstallProgress("Downloading Alpine", done, total) }
+                runOnUiThread { updateInstallPhase("Verifying archive checksum…"); append("[Download complete. Verifying SHA-256…]\n") }
+                val actual = sha256(archiveFile)
+                if (!actual.equals(expected, true)) { archive.delete(); throw SecurityException("Checksum mismatch; archive deleted.") }
+                runOnUiThread { updateInstallPhase("Extracting root filesystem…"); append("[Checksum verified. Extracting minimal root filesystem…]\n") }
+                val a = archiveFile.absolutePath
+                val script = "set -e; mkdir -p '$alpineRoot'; tar -xzf '$a' -C '$alpineRoot'; mkdir -p '$alpineRoot/etc/apk' '$alpineRoot/dev' '$alpineRoot/proc' '$alpineRoot/sys' '$alpineRoot/run'; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$alpineRoot/etc/resolv.conf'; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > '$alpineRoot/etc/apk/repositories'; test -x '$alpineRoot/bin/sh' && test -d '$alpineRoot/usr' && test -d '$alpineRoot/etc'; printf '%s\\n' 'alpine:${alpineVersion}' > '$alpineRoot/.mt-installed'"
+                val result = rootExec(script)
+                archiveFile.delete()
+                if (result.first != 0) error("Root extraction failed: ${result.second}")
+                runOnUiThread {
+                    active = "alpine"; prefs.edit().putString("active_distro", "alpine").apply()
+                    append("[Alpine installed. Opening Alpine terminal…]\n")
+                    append("Next: run apk update to refresh package indexes.\n")
+                    dismissInstallProgress(); busy = false; terminalView.isEnabled = true; runLinux("cat /etc/os-release; id")
+                }
+            } catch (e: Exception) {
+                archive?.delete()
+                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; terminalView.isEnabled = true }
+            }
+        }.start()
+    }
+
+    private fun fetchText(address: String): String {
+        val c = (URL(address).openConnection() as HttpURLConnection).apply { connectTimeout = 45000; readTimeout = 90000; instanceFollowRedirects = true }
+        try { if (c.responseCode !in 200..299) error("Checksum server HTTP ${c.responseCode}"); return c.inputStream.bufferedReader().use { it.readText() } }
+        finally { c.disconnect() }
+    }
+
+    private fun download(address: String, file: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        val c = (URL(address).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 45000; readTimeout = 120000; instanceFollowRedirects = true
+        }
+        try {
+            if (c.responseCode !in 200..299) error("Download server HTTP ${c.responseCode}")
+            val total = c.contentLengthLong
+            c.inputStream.use { source ->
+                file.outputStream().buffered().use { target ->
+                    val buffer = ByteArray(64 * 1024)
+                    var done = 0L
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        target.write(buffer, 0, count)
+                        done += count
+                        onProgress(done, total)
+                    }
+                }
+            }
+            if (!file.isFile || file.length() == 0L) error("Downloaded archive is empty")
+            if (total > 0 && file.length() != total) error("Download ended early: received ${file.length()} of $total bytes")
+        } finally { c.disconnect() }
+    }
+
+    private fun showInstallProgress(title: String) {
+        runOnUiThread {
+            installProgress = ProgressDialog(this).apply {
+                setTitle(title)
+                setMessage("Preparing download…")
+                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                max = 100
+                progress = 0
+                setCancelable(false)
+                setCanceledOnTouchOutside(false)
+                show()
+            }
+        }
+    }
+
+    private fun updateInstallProgress(phase: String, done: Long, total: Long) {
+        runOnUiThread {
+            installProgress?.let { dialog ->
+                dialog.setMessage(if (total > 0) "$phase — ${done / 1048576} / ${total / 1048576} MB" else "$phase — ${done / 1048576} MB")
+                if (total > 0) { dialog.isIndeterminate = false; dialog.progress = ((done * 100L) / total).toInt().coerceIn(0, 100) }
+                else dialog.isIndeterminate = true
+            }
+        }
+    }
+
+    private fun updateInstallPhase(message: String) {
+        runOnUiThread { installProgress?.let { it.isIndeterminate = true; it.setMessage(message) } }
+    }
+
+    private fun dismissInstallProgress() {
+        installProgress?.dismiss()
+        installProgress = null
+    }
+
+    private fun sha256(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { s -> val b = ByteArray(65536); while (true) { val n = s.read(b); if (n < 0) break; md.update(b, 0, n) } }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun select(id: String) {
+        active = id
+        prefs.edit().putString("active_distro", id).apply()
+        startSession(id, "cat /etc/os-release; id")
+    }
+
+    private fun confirmLxc(d: Distro) {
+        AlertDialog.Builder(this).setTitle("Download ${d.name}?")
+            .setMessage("Download the latest ARM64 root filesystem from the Linux Containers image server. MT Terminal verifies the published SHA-256 checksum before extracting it into an isolated directory. This is a minimal command-line container rootfs, not a bootable phone image. No desktop environment is installed.")
+            .setPositiveButton("Download and install") { _, _ -> installLxc(d) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun installLxc(d: Distro) {
+        val imagePath = d.imagePath ?: return
+        if (busy) return
+        // Re-check immediately before downloading in case the catalogue state was stale.
+        if (exists(d.id)) {
+            active = d.id
+            prefs.edit().putString("active_distro", d.id).apply()
+            append("\n[${d.name} is already installed. Reusing the existing root filesystem; no download needed.]\n")
+            runLinux("cat /etc/os-release; id")
+            return
+        }
+        busy = true; terminalView.isEnabled = false
+        showInstallProgress("Installing ${d.name}")
+        append("\n[Finding latest ARM64 ${d.name} rootfs…]\n")
+        Thread {
+            var archive: File? = null
+            var tarFile: File? = null
+            val target = root(d.id)
+            val staging = "$target.installing"
+            try {
+                val base = "https://images.linuxcontainers.org/images/$imagePath/"
+                val listing = fetchText(base)
+                val stamps = Regex("href=[\\\"'](20[0-9]{6}_[0-9]{2}(?::|%3A)[0-9]{2}/)[\\\"']").findAll(listing).map { it.groupValues[1] }.toList().sorted()
+                val stamp = stamps.lastOrNull() ?: error("No published ARM64 build found for this distribution")
+                val buildUrl = base + stamp
+                val sums = fetchText(buildUrl + "SHA256SUMS")
+                val expected = Regex("(?im)^([0-9a-f]{64})\\s+\\*?rootfs\\.tar\\.xz\\s*$").find(sums)?.groupValues?.get(1)
+                    ?: error("Published SHA256SUMS does not include rootfs.tar.xz")
+                val archiveFile = File(cacheDir, "${d.id}-rootfs.tar.xz")
+                val tarOutput = File(cacheDir, "${d.id}-rootfs.tar")
+                archive = archiveFile
+                tarFile = tarOutput
+                runOnUiThread { updateInstallPhase("Downloading ${d.name} rootfs…") }
+                download(buildUrl + "rootfs.tar.xz", archiveFile) { done, total -> updateInstallProgress("Downloading ${d.name}", done, total) }
+                runOnUiThread { updateInstallPhase("Verifying published SHA-256…"); append("[Verifying published SHA-256…]\n") }
+                if (!sha256(archiveFile).equals(expected, true)) throw SecurityException("SHA-256 mismatch; archive rejected")
+                runOnUiThread { updateInstallPhase("Checksum verified. Decompressing rootfs…"); append("[Checksum verified. Decompressing rootfs…]\n") }
+                XZInputStream(archiveFile.inputStream().buffered()).use { xz ->
+                    tarOutput.outputStream().buffered().use { out -> xz.copyTo(out) }
+                }
+                runOnUiThread { updateInstallPhase("Extracting and preparing Linux filesystem…") }
+                val a = tarOutput.absolutePath
+                val script = "set -e; TARGET='$target'; STAGING='$staging'; BACKUP=\"\${TARGET}.previous\"; mkdir -p \"\${TARGET%/*}\"; rm -rf \"\$STAGING\" \"\$BACKUP\"; mkdir -p \"\$STAGING\"; tar -xpf '$a' -C \"\$STAGING\"; test -x \"\$STAGING/bin/sh\"; mkdir -p \"\$STAGING/etc\" \"\$STAGING/dev\" \"\$STAGING/proc\" \"\$STAGING/sys\" \"\$STAGING/run\"; rm -f \"\$STAGING/etc/resolv.conf\"; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > \"\$STAGING/etc/resolv.conf\"; if [ -e \"\$TARGET\" ]; then mv \"\$TARGET\" \"\$BACKUP\"; fi; if mv \"\$STAGING\" \"\$TARGET\"; then rm -rf \"\$BACKUP\"; else [ ! -e \"\$BACKUP\" ] || mv \"\$BACKUP\" \"\$TARGET\"; exit 1; fi; test -x \"\$TARGET/bin/sh\" && test -f \"\$TARGET/etc/os-release\" && test -d \"\$TARGET/usr/bin\" && test -d \"\$TARGET/var\"; printf '%s\\n' '${d.id}' > \"\$TARGET/.mt-installed\""
+                val result = rootExec(script)
+                if (result.first != 0) error("Root extraction failed: ${result.second}")
+                runOnUiThread {
+                    active = d.id; prefs.edit().putString("active_distro", d.id).apply()
+                    append("[${d.name} installed. Opening terminal…]\n")
+                    dismissInstallProgress(); busy = false; terminalView.isEnabled = true; runLinux("cat /etc/os-release; id")
+                }
+            } catch (e: Exception) {
+                rootExec("rm -rf '$staging'")
+                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; terminalView.isEnabled = true }
+            } finally { archive?.delete(); tarFile?.delete() }
+        }.start()
+    }
+
+    private fun unavailable(d: Distro) {
+        AlertDialog.Builder(this).setTitle(d.name)
+            .setMessage("The official ARM64 minimal rootfs downloader and its verification method are not integrated yet. This distribution is not downloadable in this build; MT-OS will not use an unverified archive.")
+            .setPositiveButton("OK", null).show()
+    }
+
+    private fun runCommand() { sendPty("\r") }
+
+    internal fun focusTerminalInput() {
+        if (::terminalView.isInitialized) {
+            terminalView.isFocusable = true
+            terminalView.isFocusableInTouchMode = true
+            terminalView.requestFocus()
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun runLinux(command: String) {
+        val id = active ?: run { showCatalogue(); return }
+        val current = activeSession
+        if (current != null && current.distroId == id && current.vtSession != null && !current.starting) {
+            if (command.isNotBlank()) sendPty(command + "\n")
+        } else startSession(id, command)
+    }
+
+    private fun newSession() {
+        val id = active
+        if (id == null || !exists(id)) { showCatalogue(); return }
+        startSession(id)
+    }
+
+    private fun startSession(distroId: String, initialCommand: String = "") {
+        if (!exists(distroId)) {
+            append("\n[${name(distroId)} is not installed. Choose an installed distribution first.]\n")
+            showCatalogue()
+            return
+        }
+        val session = ShellSession(++sessionCounter, distroId)
+        session.buffer.append("MT Terminal • ${name(distroId)}\n")
+        sessions.add(session); activeSession = session
+        renderSessionTabs(); output.text = session.buffer.toString()
+        busy = true; terminalView.isEnabled = false
+        val rootPath = root(distroId)
+        appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
+        try {
+            val shell = """R='$rootPath'; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; mountpoint -q "${'$'}R/dev" || mount --bind /dev "${'$'}R/dev"; mkdir -p "${'$'}R/dev/pts"; mountpoint -q "${'$'}R/dev/pts" || mount -t devpts devpts "${'$'}R/dev/pts"; ln -sf /dev/pts/ptmx "${'$'}R/dev/ptmx"; mountpoint -q "${'$'}R/proc" || mount -t proc proc "${'$'}R/proc"; mountpoint -q "${'$'}R/sys" || mount -t sysfs sysfs "${'$'}R/sys"; chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor; export PS1="root@mt-gnome:~\${'$'} "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
+            // Start from Android's guaranteed system shell, then let its PATH resolve
+            // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
+            // expose su from /system/xbin or another PATH directory.
+            // Resolve Magisk's su in the app's inherited Android environment first.
+            // The terminal's restricted PATH previously hid the executable even though
+            // rootExec() could launch it from the application process.
+            val suPath = resolveSuExecutable()
+            val quotedShell = "'" + shell.replace("'", "'\\''") + "'"
+            val suCommand = "exec '$suPath' -c $quotedShell"
+            val inheritedPath = System.getenv("PATH").orEmpty()
+            val terminalPath = listOf(
+                inheritedPath, "/system/bin", "/system/xbin", "/sbin",
+                "/debug_ramdisk", "/vendor/bin", "/product/bin", "/usr/bin", "/bin"
+            ).filter { it.isNotBlank() }.distinct().joinToString(":")
+            val vt = TerminalSession(
+                "/system/bin/sh",
+                "/",
+                arrayOf("/system/bin/sh", "-c", suCommand),
+                arrayOf(
+                    "HOME=/root",
+                    "USER=root",
+                    "LOGNAME=root",
+                    "PATH=$terminalPath",
+                    "TERM=xterm-256color",
+                    "COLORTERM=truecolor"
+                ),
+                2000,
+                terminalBridge
+            )
+            session.vtSession = vt
+            terminalView.attachSession(vt)
+            session.starting = false
+            busy = false
+            terminalView.isEnabled = true
+            terminalView.requestFocus()
+            if (initialCommand.isNotBlank()) (initialCommand + "\n").toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) }
+            renderSessionTabs()
+            terminalView.post { resizePty(); focusTerminalInput() }
+        } catch (e: Exception) {
+            appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
+            session.starting = false
+            if (activeSession === session) { busy = false; terminalView.isEnabled = true }
+            renderSessionTabs()
+        }
+    }
+
+    private fun resolveSuExecutable(): String {
+        val process = Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", "command -v su"))
+        val candidate = process.inputStream.bufferedReader().readText().trim().lineSequence().firstOrNull().orEmpty()
+        val exit = process.waitFor()
+        if (exit == 0 && candidate.isNotBlank()) {
+            if (candidate.startsWith("/")) return candidate
+            val path = System.getenv("PATH").orEmpty().split(":")
+            path.forEach { dir ->
+                val file = File(dir, candidate)
+                if (file.isFile && file.canExecute()) return file.absolutePath
+            }
+        }
+        // Common Magisk/Kernelsu locations are checked as a fallback; never silently
+        // start a shell that will immediately fail with "su: not found".
+        val candidates = listOf(
+            "/system/bin/su", "/system/xbin/su", "/sbin/su",
+            "/debug_ramdisk/su", "/data/adb/magisk/su",
+            "/data/adb/ksu/bin/su"
+        )
+        return candidates.firstOrNull { File(it).canExecute() }
+            ?: throw IllegalStateException("Root executable not found. Open Magisk, grant MT-GNOME superuser access, then retry. App PATH: ${System.getenv("PATH")}")
+    }
+
+    private fun renderSessionTabs() {
+        if (!::sessionTabs.isInitialized) return
+        sessionTabs.removeAllViews()
+        sessions.forEach { session ->
+            val selected = session === activeSession
+            val tab = btn("${session.number} · ${name(session.distroId)}") { switchSession(session) }.apply {
+                textSize = 9f
+                setTextColor(if (selected) Color.rgb(111, 220, 170) else Color.LTGRAY)
+                background = rounded(if (selected) Color.rgb(43, 58, 62) else Color.rgb(31, 36, 49), 8)
+                setOnLongClickListener {
+                    AlertDialog.Builder(this@TerminalActivity).setTitle("Close session ${session.number}?")
+                        .setMessage("This ends processes running in this shell session.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Close") { _, _ ->
+                            closeSession(session); sessions.remove(session)
+                            if (activeSession === session) activeSession = sessions.lastOrNull()
+                            showActiveSession(); renderSessionTabs()
+                        }.show()
+                    true
+                }
+            }
+            sessionTabs.addView(tab, LinearLayout.LayoutParams(-2, dp(34)).apply { rightMargin = dp(5) })
+        }
+        sessionTabs.addView(btn("+") { newSession() }.apply {
+            textSize = 15f; setTextColor(Color.WHITE); background = rounded(Color.rgb(69, 83, 130), 8)
+        }, LinearLayout.LayoutParams(dp(38), dp(34)))
+    }
+
+    private fun switchSession(session: ShellSession) {
+        activeSession = session; active = session.distroId
+        prefs.edit().putString("active_distro", active).apply()
+        showActiveSession(); renderSessionTabs()
+    }
+
+    private fun showActiveSession() {
+        val session = activeSession
+        output.text = if (session == null) "No terminal session. Tap + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
+        busy = session?.starting ?: false
+        terminalView.isEnabled = !busy && session?.vtSession != null
+        if (session?.vtSession != null) terminalView.attachSession(session.vtSession!!)
+        scroll.post { resizePty() }
+    }
+
+    private fun appendToSession(session: ShellSession, value: String) {
+        synchronized(session.buffer) { session.buffer.append(value) }
+        if (activeSession === session && ::output.isInitialized) {
+            output.text = value.trim().takeLast(240)
+        }
+    }
+
+    private fun clearActiveTerminal() {
+        val session = activeSession ?: return
+        synchronized(session.buffer) { session.buffer.setLength(0) }
+        session.vtSession?.reset()
+        output.text = ""
+    }
+
+    private fun selectAllTerminalOutput() {
+        terminalView.showContextMenu()
+    }
+
+    private fun copyTerminalSelection() {
+        terminalView.showContextMenu()
+        Toast.makeText(this, "Long-press terminal text to select and copy", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun pasteClipboard() {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = clipboard.primaryClip
+        if (clip == null || clip.itemCount == 0) { Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show(); return }
+        val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
+        activeSession?.vtSession?.let { session -> value.toByteArray(Charsets.UTF_8).let { session.write(it, 0, it.size) } }
+    }
+
+    private fun resizePty() {
+        if (::terminalView.isInitialized) {
+            terminalView.requestLayout()
+            terminalView.invalidate()
+        }
+    }
+
+    private fun sendPty(text: String) {
+        val session = activeSession ?: return
+        sendSession(session, text)
+    }
+
+    private fun sendSession(session: ShellSession, text: String) {
+        try {
+            session.vtSession?.let { vt -> text.toByteArray(Charsets.UTF_8).let { vt.write(it, 0, it.size) } }
+        } catch (e: Exception) { appendToSession(session, "[Terminal input error] ${e.message}\n") }
+    }
+
+    private fun closeSession(session: ShellSession) {
+        try { session.vtSession?.finishIfRunning() } catch (_: Exception) {}
+        session.vtSession = null
+        session.starting = false
+    }
+
+    private fun closeAllSessions() {
+        sessions.toList().forEach { closeSession(it) }
+        sessions.clear(); activeSession = null
+    }
+
+    private fun cleanTerminalText(value: String): String {
+        var text = value.replace(Regex("\u001B\\][^\u0007]*(?:\u0007|\u001B\\\\)"), "")
+        text = text.replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "")
+        text = text.replace(Regex("\u001B\\([B0]"), "")
+        return text.replace("\r\n", "\n").replace('\r', '\n')
+            .filter { it == '\n' || it == '\t' || it >= ' ' }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (android.provider.Settings.canDrawOverlays(this) && overlayContent?.parent != null) {
+            startService(Intent(this, FloatingTerminalService::class.java))
+        }
+    }
+
+    override fun onDestroy() {
+        overlayContent = null
+        hostActivity = null
+        stopService(Intent(this, FloatingTerminalService::class.java))
+        closeAllSessions()
+        super.onDestroy()
+    }
+
+    private fun rootExec(script: String): Pair<Int, String> {
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "exec 2>&1; $script"))
+        val out = StringBuilder()
+        BufferedReader(InputStreamReader(p.inputStream)).use { r -> var line: String?; while (r.readLine().also { line = it } != null) out.append(line).append('\n') }
+        return Pair(p.waitFor(), out.toString())
+    }
+
+    private fun append(s: String) {
+        val session = activeSession
+        if (session != null) appendToSession(session, s)
+        else if (::output.isInitialized) { output.append(s); }
+    }
+    private fun btn(label: String, action: () -> Unit) = Button(this).apply { text = label; textSize = 10f; isAllCaps = false; setOnClickListener { action() } }
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+
+}}T.previous\"; test ! -e \"$T\""
+                val result = rootExec(script)
+                runOnUiThread {
+                    if (result.first == 0) {
+                        if (active == distro.id) { active = null; prefs.edit().remove("active_distro").apply() }
+                        showActiveSession(); renderSessionTabs()
+                        append("\n[${distro.name} deleted successfully.]\n")
+                        showCatalogue()
+                    } else {
+                        append("\n[Could not delete ${distro.name}] ${result.second}\n")
+                        Toast.makeText(this, "Deletion failed", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { append("\n[Deletion failed] ${e.message}\n") }
+            }
+        }.start()
+    }
+
+    private val backupRequestCode = 7314
+    private var pendingBackupDistro: Distro? = null
+
+    private fun chooseBackupDestination(distro: Distro) {
+        pendingBackupDistro = distro
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/gzip"
+            putExtra(Intent.EXTRA_TITLE, "mt-${distro.id}-backup.tar.gz")
+        }
+        try { startActivityForResult(intent, backupRequestCode) }
+        catch (e: Exception) { pendingBackupDistro = null; Toast.makeText(this, "Storage picker unavailable: ${e.message}", Toast.LENGTH_LONG).show() }
+    }
+
+    @Deprecated("Handled for Android storage document picker")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != backupRequestCode) return
+        val distro = pendingBackupDistro
+        pendingBackupDistro = null
+        val destination = if (resultCode == RESULT_OK) data?.data else null
+        if (distro == null || destination == null) return
+        backupDistroToUri(distro, destination)
+    }
+
+    private fun backupDistroToUri(distro: Distro, destination: Uri) {
+        if (busy) { Toast.makeText(this, "Wait for the current operation to finish", Toast.LENGTH_SHORT).show(); return }
+        busy = true
+        showInstallProgress("Backing up ${distro.name}")
+        Thread {
+            val archive = File(cacheDir, "mt-${distro.id}-backup.tar.gz")
+            try {
+                val target = root(distro.id)
+                if (!exists(distro.id)) error("Distribution is no longer installed")
+                val result = rootExec("set -e; test -d '$target'; tar -czpf '${archive.absolutePath}' -C '${target.substringBeforeLast('/')}' '${target.substringAfterLast('/')}'")
+                if (result.first != 0 || !archive.isFile || archive.length() == 0L) error("Could not create archive: ${result.second}")
+                contentResolver.openOutputStream(destination, "w")?.use { output ->
+                    archive.inputStream().buffered().use { input -> input.copyTo(output, 64 * 1024) }
+                } ?: error("Could not open the selected storage destination")
+                runOnUiThread {
+                    dismissInstallProgress(); busy = false
+                    Toast.makeText(this, "Backup saved: ${distro.name}", Toast.LENGTH_LONG).show()
+                    append("\n[Backup saved for ${distro.name}.]\n")
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    dismissInstallProgress(); busy = false
+                    append("\n[Backup failed for ${distro.name}] ${e.message}\n")
+                    Toast.makeText(this, "Backup failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally { archive.delete() }
+        }.start()
     }
 
     private fun confirmAlpine() {
