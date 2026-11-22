@@ -142,7 +142,12 @@ class GnomeHomeActivity : Activity() {
         addDockButton(dock, "⌘", "Terminal") { openTerminalWindow() }
         addDockButton(dock, "⚙", "Settings") { showAppearance() }
         addDockButton(dock, "▣", "System") { showQuickSettings() }
-        addDockButton(dock, "▤", "Tools") { startActivity(Intent(this, DesktopToolsActivity::class.java)) }
+        addDockButton(dock, "▤", "Tools") {
+            RootWindowBridge(this).launchFreeformComponent("com.mt.gnome/.DesktopToolsActivity") {
+                try { startActivity(Intent(this, DesktopToolsActivity::class.java)) }
+                catch (_: Exception) { toast("Could not open desktop tools") }
+            }
+        }
         dock.addView(View(this).apply { setBackgroundColor(Color.argb(80,255,255,255)) },
             LinearLayout.LayoutParams(dp(38), dp(1)).apply { topMargin=dp(4); bottomMargin=dp(7) })
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL }
@@ -715,6 +720,23 @@ class GnomeHomeActivity : Activity() {
 }
 
 private class RootWindowBridge(private val activity: Activity) {
+    fun launchFreeformComponent(component: String, fallback: () -> Unit) {
+        Thread {
+            val command = "settings put global enable_freeform_support 1 && " +
+                "settings put global force_resizable_activities 1 && " +
+                "am start --windowingMode 5 -n " + shellQuote(component)
+            val result = runRoot(command)
+            val launched = result.contains("Starting:") && !result.contains("Error:") &&
+                !result.contains("Exception") && result.contains("exit=0")
+            activity.runOnUiThread {
+                if (!launched) {
+                    Toast.makeText(activity, "Freeform blocked or root not approved. Opening normally.", Toast.LENGTH_LONG).show()
+                    fallback()
+                }
+            }
+        }.start()
+    }
+
     fun launchFreeform(info: ResolveInfo, fallback: () -> Unit) {
         val component = info.activityInfo.packageName + "/" + info.activityInfo.name
         Thread {
