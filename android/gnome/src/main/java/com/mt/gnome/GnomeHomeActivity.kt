@@ -421,13 +421,13 @@ class GnomeHomeActivity : Activity() {
             }
         }
         navItem("Input & Pointer") {
-            page("Input & Pointer","Touch and pointer preferences")
+            page("Input & Pointer","Professional mouse pointer controls across the entire screen")
             item("Direct touch","Use the phone screen directly; hide the virtual pointer and trackpad") {
                 prefs.edit().putString("input_mode","direct").apply()
                 stopService(Intent(this, PointerOverlayService::class.java))
                 toast("Direct touch enabled")
             }
-            item("Trackpad mode","Show a floating pointer and trackpad above Android apps") {
+            item("Full-screen mouse mode","Touch anywhere to move the desktop arrow pointer. Tap to click, double-tap to double-click, hold for right-click and use two fingers to scroll.") {
                 prefs.edit().putString("input_mode","trackpad").apply()
                 if (!Settings.canDrawOverlays(this)) {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName")))
@@ -438,7 +438,7 @@ class GnomeHomeActivity : Activity() {
                             .setMessage("Android must enable MT-GNOME Pointer in Accessibility settings before pointer clicks and gestures can be sent to other apps.")
                             .setPositiveButton("Open Accessibility settings") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                             .setNegativeButton("Later", null).show()
-                    } else toast("Trackpad enabled")
+                    } else toast("Full-screen mouse enabled — touch anywhere to control the pointer")
                 }
             }
             item("Overlay permission","Allow the dock or pointer to appear above other apps") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName"))) }
