@@ -7,6 +7,7 @@ on:
       - ".github/workflows/mt-gnome-build.yml"
       - "android/settings.gradle.kts"
       - "android/gnome/**"
+      - "README.md"
   workflow_dispatch:
 
 permissions:
@@ -71,6 +72,15 @@ jobs:
           keyPassword=$MTOS_KEY_PASSWORD
           EOF
           chmod 600 signing/keystore.properties
+      - name: Enforce Android-native MT-GNOME dependencies
+        run: |
+          set -euo pipefail
+          if grep -RniE 'MT-Phosh|MT-Phoc|phosh|phoc' android/gnome; then
+            echo "MT-GNOME must not depend on Phosh or Phoc packages."
+            exit 1
+          fi
+          echo "MT-GNOME package check passed."
+
       - name: Configure Gradle dependency cache
         uses: gradle/actions/setup-gradle@v4
         with:
