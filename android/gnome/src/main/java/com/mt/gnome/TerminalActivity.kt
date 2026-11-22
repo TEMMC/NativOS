@@ -74,6 +74,7 @@ class TerminalActivity : Activity() {
         var descriptor: ParcelFileDescriptor? = null, var input: FileInputStream? = null,
         var output: FileOutputStream? = null, var fd: Int = -1, var pid: Int = -1,
         var starting: Boolean = true,
+        var closing: Boolean = false,
         var vtSession: TerminalSession? = null
     )
     private val sessions = mutableListOf<ShellSession>()
