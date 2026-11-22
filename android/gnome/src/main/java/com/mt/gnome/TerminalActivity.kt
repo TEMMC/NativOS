@@ -104,6 +104,7 @@ class TerminalActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         active = prefs.getString("active_distro", null)
+        hostActivity = this
         requestedOrientation = when (getSharedPreferences("mt_gnome", MODE_PRIVATE).getString("orientation", "landscape")) {
             "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             "system" -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -115,7 +116,7 @@ class TerminalActivity : Activity() {
         windowHeight = (resources.displayMetrics.heightPixels * 0.82f).toInt()
         windowX = (resources.displayMetrics.widthPixels - windowWidth) / 2
         windowY = (resources.displayMetrics.heightPixels - windowHeight) / 2
-        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         applyWindowBounds()
         val id = active
         if (id != null && exists(id)) startSession(id)
@@ -141,7 +142,7 @@ class TerminalActivity : Activity() {
         val base = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(10))
-            background = rounded(Color.argb(76, 17, 20, 29), 16)
+            background = rounded(Color.argb(188, 17, 20, 29), 16)
         }
         val titleBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
