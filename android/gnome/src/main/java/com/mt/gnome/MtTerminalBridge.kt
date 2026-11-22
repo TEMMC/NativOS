@@ -42,7 +42,7 @@ class MtTerminalBridge(
         val clip = clipboard.primaryClip ?: return
         if (clip.itemCount > 0) {
             val value = clip.getItemAt(0).coerceToText(context)?.toString() ?: return
-            session.write(value.toByteArray(Charsets.UTF_8))
+            value.toByteArray(Charsets.UTF_8).let { session.write(it, 0, it.size) }
         }
     }
     override fun onBell(session: TerminalSession) = Unit
