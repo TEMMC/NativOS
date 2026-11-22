@@ -37,12 +37,12 @@ class MtTerminalBridge(
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("MT Terminal", text))
     }
-    override fun onPasteTextFromClipboard(session: TerminalSession?) {
+    override fun onPasteTextFromClipboard(session: TerminalSession) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = clipboard.primaryClip ?: return
         if (clip.itemCount > 0) {
             val value = clip.getItemAt(0).coerceToText(context)?.toString() ?: return
-            session?.write(value.toByteArray(Charsets.UTF_8))
+            session.write(value.toByteArray(Charsets.UTF_8))
         }
     }
     override fun onBell(session: TerminalSession) = Unit
@@ -50,7 +50,6 @@ class MtTerminalBridge(
         terminalView.post { terminalView.invalidate() }
     }
     override fun onTerminalCursorStateChange(state: Boolean) = Unit
-    override fun setTerminalShellPid(session: TerminalSession, pid: Int) = Unit
     override fun getTerminalCursorStyle(): Int? = null
 
     override fun onScale(scale: Float): Float = scale
