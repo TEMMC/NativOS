@@ -475,9 +475,19 @@ class GnomeHomeActivity : Activity() {
         }
         navItem("Terminal") {
             page("Terminal","Terminal appearance and behaviour")
-            item("Font size","Current: ${prefs.getInt("terminal_font_size",13)} sp") {
-                val sizes=arrayOf("11 sp","12 sp","13 sp","14 sp","15 sp","16 sp")
-                AlertDialog.Builder(this).setTitle("Terminal font size").setItems(sizes) { _,i -> prefs.edit().putInt("terminal_font_size",11+i).apply() }.show()
+            item("Font size","Current: ${prefs.getInt("terminal_font_size",13)} sp. Applies when the terminal is reopened.") {
+                val sizes=arrayOf("10 sp","11 sp","12 sp","13 sp","14 sp","15 sp","16 sp","18 sp","20 sp","22 sp")
+                AlertDialog.Builder(this).setTitle("Terminal font size").setSingleChoiceItems(sizes, (prefs.getInt("terminal_font_size",13)-10).coerceIn(0,sizes.lastIndex)) { d,i ->
+                    prefs.edit().putInt("terminal_font_size",10+i).apply()
+                    d.dismiss(); toast("Terminal font size saved")
+                }.setNegativeButton("Cancel",null).show()
+            }
+            item("Terminal background opacity","Current: ${prefs.getInt("terminal_opacity",30)}%. Lower values reveal more wallpaper.") {
+                val values=intArrayOf(10,20,30,40,50,60,70,80,90)
+                AlertDialog.Builder(this).setTitle("Terminal opacity").setSingleChoiceItems(values.map { "$it%" }.toTypedArray(), (values.indexOf(prefs.getInt("terminal_opacity",30))).coerceAtLeast(0)) { d,i ->
+                    prefs.edit().putInt("terminal_opacity",values[i]).apply()
+                    d.dismiss(); toast("Opacity saved. Reopen Terminal to apply.")
+                }.setNegativeButton("Cancel",null).show()
             }
             item("Default distribution",prefs.getString("active_distro","Select when opening") ?: "Select when opening") { toast("Choose the active distribution in DISTROS") }
         }
