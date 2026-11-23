@@ -18,6 +18,7 @@ import android.widget.Toast
 class FloatingTerminalService : Service() {
     private lateinit var wm: WindowManager
     private var content: View? = null
+    private var owner: TerminalActivity? = null
     private lateinit var params: WindowManager.LayoutParams
 
 
@@ -47,26 +48,65 @@ class FloatingTerminalService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        attachCurrentOverlay()
+        return START_NOT_STICKY
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     @Synchronized
     private fun detachOverlay() {
-        val view = content ?: return
-        // Clear the reference first so a rapid reopen cannot reuse a view that is
-        // being removed from the old Activity's window.
+        val view = content
         content = null
+        if (view != null) {
+            try {
+                if (::wm.isInitialized && view.isAttachedToWindow) wm.removeViewImmediate(view)
+            } catch (e: Exception) {
+                android.util.Log.w("MT-GNOME", "Could not detach floating terminal view", e)
+            }
+        }
+        if (owner?.let { TerminalActivity.hostActivity === it } == true) {
+            TerminalActivity.overlayContent = null
+        }
+    }
+
+    @Synchronized
+    private fun attachCurrentOverlay() {
+        if (!::wm.isInitialized || content?.isAttachedToWindow == true) return
+        val currentOwner = TerminalActivity.hostActivity ?: return
+        val view = currentOwner.overlayContent ?: return
+        // Do not let an old service instance attach a view from a newer Activity.
+        if (owner != null && owner !== currentOwner) detachOverlay()
+        owner = currentOwner
         try {
-            if (::wm.isInitialized && view.isAttachedToWindow) wm.removeViewImmediate(view)
+            (view.parent as? android.view.ViewGroup)?.removeView(view)
+            val metrics = resources.displayMetrics
+            params = WindowManager.LayoutParams(
+                (metrics.widthPixels * 0.94f).toInt(),
+                (metrics.heightPixels * 0.82f).toInt(),
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = (metrics.widthPixels - width) / 2
+                y = (metrics.heightPixels - height) / 2
+                softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            }
+            wm.addView(view, params)
+            content = view
         } catch (e: Exception) {
-            android.util.Log.w("MT-GNOME", "Could not detach floating terminal view", e)
+            content = null
+            android.util.Log.e("MT-GNOME", "Could not attach floating terminal overlay", e)
+            stopSelf()
         }
     }
 
     override fun onDestroy() {
         detachOverlay()
         if (active === this) active = null
+        owner = null
         super.onDestroy()
     }
 
@@ -74,9 +114,9 @@ class FloatingTerminalService : Service() {
         @Volatile private var active: FloatingTerminalService? = null
 
         @Synchronized
-        fun detachOverlay() {
+        fun detachOverlay(owner: TerminalActivity) {
             active?.let { service ->
-                service.detachOverlay()
+                if (service.owner === owner) service.detachOverlay()
             }
         }
 
@@ -112,25 +152,6 @@ class FloatingTerminalService : Service() {
             return
         }
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        content = TerminalActivity.overlayContent
-        val view = content ?: run { stopSelf(); return }
-        (view.parent as? android.view.ViewGroup)?.removeView(view)
-        val metrics = resources.displayMetrics
-        params = WindowManager.LayoutParams(
-            (metrics.widthPixels * 0.94f).toInt(),
-            (metrics.heightPixels * 0.82f).toInt(),
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = (metrics.widthPixels - width) / 2
-            y = (metrics.heightPixels - height) / 2
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-        }
-        try { wm.addView(view, params) } catch (e: Exception) {
-            Toast.makeText(this, "Could not create floating terminal: ${e.message}", Toast.LENGTH_LONG).show()
-            stopSelf()
-        }
+        attachCurrentOverlay()
     }
 }
