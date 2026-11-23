@@ -33,6 +33,7 @@
             </intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/mt_gnome_accessibility" />
         </service>
+        <activity android:name=".FileManagerActivity" android:exported="false" android:label="MT Files" android:resizeableActivity="true" />
         <activity android:name=".DesktopToolsActivity" android:exported="false" android:label="Desktop Tools" android:resizeableActivity="true" />
         <activity android:name=".TerminalActivity" android:theme="@style/Theme.MTGnome.TransparentTerminal" android:exported="false" android:label="Terminal" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize" />
         <activity
