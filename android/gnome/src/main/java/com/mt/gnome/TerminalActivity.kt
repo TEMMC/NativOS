@@ -14,7 +14,6 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.ParcelFileDescriptor
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -37,8 +36,6 @@ import android.widget.TextView
 import android.widget.Toast
 import java.io.BufferedReader
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -74,8 +71,6 @@ class TerminalActivity : Activity() {
     private var historyIndex = 0
     private data class ShellSession(
         val number: Int, val distroId: String, val buffer: StringBuilder = StringBuilder(),
-        var descriptor: ParcelFileDescriptor? = null, var input: FileInputStream? = null,
-        var output: FileOutputStream? = null, var fd: Int = -1, var pid: Int = -1,
         var starting: Boolean = true,
         var closing: Boolean = false,
         var vtSession: TerminalSession? = null
@@ -84,7 +79,6 @@ class TerminalActivity : Activity() {
     private var activeSession: ShellSession? = null
     private var sessionCounter = 0
     private lateinit var sessionTabs: LinearLayout
-    private val ptyLock = Any()
 
     companion object {
         @Volatile var overlayContent: View? = null
@@ -790,7 +784,7 @@ class TerminalActivity : Activity() {
         activeSession = session
         active = session.distroId
         prefs.edit().putString("active_distro", active).apply()
-        if (vt != null) terminalBridge.attachSession(vt)
+        if (vt != null) terminalBridge.attachSession(vt) else terminalBridge.detachSession(null)
         showActiveSession()
         renderSessionTabs()
     }
@@ -871,23 +865,22 @@ class TerminalActivity : Activity() {
         session.starting = false
         val vt = session.vtSession
         session.vtSession = null
-        // Termux waits for the child process and closes its PTY asynchronously.
-        // Never SIGKILL a session from the UI thread while its emulator is attached.
+        // Detach before shutdown so late PTY callbacks cannot render a closing session.
+        terminalBridge.detachSession(vt)
         if (vt != null) Thread({
             try {
-                synchronized(ptyLock) {
-                    if (vt.isRunning) vt.finishIfRunning()
-                }
+                if (vt.isRunning) vt.finishIfRunning()
             } catch (e: Exception) {
-                android.util.Log.w("MT-GNOME", "Could not stop terminal session", e)
+                android.util.Log.w("MT-GNOME", "Could not stop terminal session " + session.number, e)
             }
-        }, "MT-Terminal-close-${session.number}").start()
+        }, "MT-Terminal-close-${session.number}").apply { isDaemon = true }.start()
     }
 
     private fun closeAllSessions() {
         val closing = sessions.toList()
         sessions.clear()
         activeSession = null
+        terminalBridge.detachSession(null)
         closing.forEach { closeSession(it) }
     }
 
