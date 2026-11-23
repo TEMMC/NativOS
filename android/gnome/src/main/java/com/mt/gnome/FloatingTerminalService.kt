@@ -52,9 +52,15 @@ class FloatingTerminalService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        content?.let { view -> try { if (view.isAttachedToWindow) wm.removeView(view) } catch (_: Exception) {} }
+        content?.let { view ->
+            try {
+                if (::wm.isInitialized && view.isAttachedToWindow) wm.removeViewImmediate(view)
+            } catch (e: Exception) {
+                android.util.Log.w("MT-GNOME", "Could not detach floating terminal view", e)
+            }
+        }
         content = null
-        active = null
+        if (active === this) active = null
         super.onDestroy()
     }
 
