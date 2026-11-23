@@ -619,7 +619,7 @@ class GnomeHomeActivity : Activity() {
     }
 
     // Lightweight offline theme palette: dock, controls and accent colours only.
-    private fun themeColors(): IntArray = when (prefs.getString("desktop_theme", "Midnight")) {
+    private fun themeColors(theme: String = prefs.getString("desktop_theme", "Midnight") ?: "Midnight"): IntArray = when (theme) {
         "Nord" -> intArrayOf(Color.rgb(46,52,64), Color.rgb(136,192,208), Color.rgb(59,66,82), Color.rgb(236,239,244))
         "Dracula" -> intArrayOf(Color.rgb(40,42,54), Color.rgb(189,147,249), Color.rgb(68,71,90), Color.rgb(248,248,242))
         "Solarized" -> intArrayOf(Color.rgb(0,43,54), Color.rgb(38,139,210), Color.rgb(7,54,66), Color.rgb(238,232,213))
@@ -637,21 +637,69 @@ class GnomeHomeActivity : Activity() {
     private fun showThemePicker(onApplied: () -> Unit = {}) {
         val themes = arrayOf("Midnight", "Nord", "Dracula", "Solarized", "Ocean", "Forest", "Sunset", "Rose Pine", "Cyberpunk", "Amber", "Paper", "Light")
         val current = prefs.getString("desktop_theme", "Midnight") ?: "Midnight"
-        AlertDialog.Builder(this)
-            .setTitle("Choose desktop theme")
-            .setSingleChoiceItems(themes, themes.indexOf(current).coerceAtLeast(0)) { d, which ->
-                val chosen = themes[which]
-                prefs.edit().putString("desktop_theme", chosen).apply()
-                window.statusBarColor = themeColors()[0]
-                window.navigationBarColor = themeColors()[0]
-                buildDesktop()
-                renderApps()
-                d.dismiss()
-                onApplied()
-                toast("$chosen theme applied")
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        val scroll = ScrollView(this).apply { isFillViewport = true; addView(content) }
+        fun applyTheme(name: String, dialog: AlertDialog) {
+            prefs.edit().putString("desktop_theme", name).apply()
+            window.statusBarColor = themeColors()[0]
+            window.navigationBarColor = themeColors()[0]
+            buildDesktop()
+            renderApps()
+            dialog.dismiss()
+            onApplied()
+            toast("$name theme applied")
+        }
+        lateinit var dialog: AlertDialog
+        themes.forEach { name ->
+            val colors = themeColors(name)
+            val selected = name == current
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                background = rounded(if (selected) colors[2] else Color.rgb(37, 40, 50), 12)
+                isClickable = true
+                isFocusable = true
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            val preview = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = rounded(colors[0], 8)
+                setPadding(dp(5), dp(5), dp(5), dp(5))
+            }
+            preview.addView(View(this).apply {
+                setBackgroundColor(colors[3])
+            }, LinearLayout.LayoutParams(-1, dp(5)))
+            val previewBody = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(5), 0, dp(5))
+            }
+            previewBody.addView(View(this).apply { setBackgroundColor(colors[1]) }, LinearLayout.LayoutParams(dp(13), dp(13)))
+            previewBody.addView(View(this).apply { setBackgroundColor(colors[2]) }, LinearLayout.LayoutParams(0, dp(13), 1f).apply { leftMargin = dp(5) })
+            preview.addView(previewBody, LinearLayout.LayoutParams(-1, dp(24)))
+            preview.addView(View(this).apply { setBackgroundColor(colors[1]) }, LinearLayout.LayoutParams(-1, dp(4)))
+            row.addView(preview, LinearLayout.LayoutParams(dp(88), dp(48)))
+            val textColumn = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, 0, 0)
+            }
+            textColumn.addView(label(name, 13, Color.WHITE, true))
+            textColumn.addView(label(if (selected) "Currently selected" else "Preview this colour palette", 10, muted))
+            row.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(label(if (selected) "✓" else "›", 19, colors[1], true))
+            row.setOnClickListener { applyTheme(name, dialog) }
+            content.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(7) })
+        }
+        dialog = AlertDialog.Builder(this)
+            .setTitle("Choose desktop theme")
+            .setView(scroll)
+            .setNegativeButton("Close", null)
+            .create()
+        dialog.show()
     }
 
     private fun showWallpaperPicker() {
