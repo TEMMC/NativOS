@@ -53,8 +53,8 @@ class GnomeHomeActivity : Activity() {
         activeWorkspace = prefs.getInt("active_workspace", 1).coerceIn(1, 4)
         wallpaperName = prefs.getString("workspace_${activeWorkspace}_wallpaper", prefs.getString("wallpaper", prefs.getString("theme", "Aurora"))) ?: "Aurora"
         applyOrientationPreference()
-        window.statusBarColor = Color.rgb(30, 30, 36)
-        window.navigationBarColor = Color.rgb(30, 30, 36)
+        window.statusBarColor = themeColors()[0]
+        window.navigationBarColor = themeColors()[0]
         enterDesktopMode()
         buildDesktop()
         loadApps()
@@ -138,7 +138,7 @@ class GnomeHomeActivity : Activity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            background = rounded(Color.argb(238, 20, 22, 29), 20)
+            background = rounded(themeColors()[0], 20)
             setPadding(dp(6), dp(10), dp(6), dp(10))
         }
         addDockButton(dock, "⌘", "Terminal") { openTerminalWindow() }
@@ -455,7 +455,10 @@ class GnomeHomeActivity : Activity() {
         }
         fun navItem(name:String,open:()->Unit) { nav.addView(label(name,10,Color.WHITE,true).apply { setPadding(dp(7),dp(11),dp(3),dp(11)); setOnClickListener { open() } }) }
         navItem("Appearance") {
-            page("Appearance","Wallpaper and desktop presentation")
+            page("Appearance","Themes, wallpaper and desktop presentation")
+            item("Desktop theme", "Current: ${prefs.getString("desktop_theme", "Midnight") ?: "Midnight"} · 12 built-in colour styles") {
+                showThemePicker { dialog.dismiss() }
+            }
             listOf("Mountain Lake","Forest","Mountain Peaks","Tropical Beach","Open Landscape").forEach { name ->
                 item(name,if(wallpaperName==name) "Built-in wallpaper" else "") {
                     wallpaperName=name; prefs.edit().putString("wallpaper",name).remove("wallpaper_uri").apply(); buildDesktop(); dialog.dismiss()
@@ -615,6 +618,42 @@ class GnomeHomeActivity : Activity() {
         }
     }
 
+    // Lightweight offline theme palette: dock, controls and accent colours only.
+    private fun themeColors(): IntArray = when (prefs.getString("desktop_theme", "Midnight")) {
+        "Nord" -> intArrayOf(Color.rgb(46,52,64), Color.rgb(136,192,208), Color.rgb(59,66,82), Color.rgb(236,239,244))
+        "Dracula" -> intArrayOf(Color.rgb(40,42,54), Color.rgb(189,147,249), Color.rgb(68,71,90), Color.rgb(248,248,242))
+        "Solarized" -> intArrayOf(Color.rgb(0,43,54), Color.rgb(38,139,210), Color.rgb(7,54,66), Color.rgb(238,232,213))
+        "Ocean" -> intArrayOf(Color.rgb(5,32,55), Color.rgb(54,190,220), Color.rgb(9,57,83), Color.rgb(225,245,255))
+        "Forest" -> intArrayOf(Color.rgb(23,43,35), Color.rgb(132,194,139), Color.rgb(38,69,51), Color.rgb(235,247,235))
+        "Sunset" -> intArrayOf(Color.rgb(54,30,42), Color.rgb(255,145,110), Color.rgb(83,42,55), Color.rgb(255,237,226))
+        "Rose Pine" -> intArrayOf(Color.rgb(35,33,54), Color.rgb(235,188,186), Color.rgb(57,53,78), Color.rgb(246,237,237))
+        "Cyberpunk" -> intArrayOf(Color.rgb(25,18,43), Color.rgb(0,245,212), Color.rgb(53,26,73), Color.rgb(255,226,250))
+        "Amber" -> intArrayOf(Color.rgb(43,34,22), Color.rgb(255,190,75), Color.rgb(74,54,30), Color.rgb(255,244,220))
+        "Paper" -> intArrayOf(Color.rgb(226,222,211), Color.rgb(44,83,100), Color.rgb(242,239,230), Color.rgb(35,42,48))
+        "Light" -> intArrayOf(Color.rgb(235,239,246), Color.rgb(44,91,160), Color.rgb(250,251,255), Color.rgb(34,43,58))
+        else -> intArrayOf(Color.rgb(20,22,29), Color.rgb(125,170,255), Color.rgb(45,49,64), Color.rgb(235,239,250))
+    }
+
+    private fun showThemePicker(onApplied: () -> Unit = {}) {
+        val themes = arrayOf("Midnight", "Nord", "Dracula", "Solarized", "Ocean", "Forest", "Sunset", "Rose Pine", "Cyberpunk", "Amber", "Paper", "Light")
+        val current = prefs.getString("desktop_theme", "Midnight") ?: "Midnight"
+        AlertDialog.Builder(this)
+            .setTitle("Choose desktop theme")
+            .setSingleChoiceItems(themes, themes.indexOf(current).coerceAtLeast(0)) { d, which ->
+                val chosen = themes[which]
+                prefs.edit().putString("desktop_theme", chosen).apply()
+                window.statusBarColor = themeColors()[0]
+                window.navigationBarColor = themeColors()[0]
+                buildDesktop()
+                renderApps()
+                d.dismiss()
+                onApplied()
+                toast("$chosen theme applied")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showWallpaperPicker() {
         val wallpapers = arrayOf("Mountain Lake", "Forest", "Mountain Peaks", "Tropical Beach", "Open Landscape")
         val selected = wallpapers.indexOf(wallpaperName).coerceAtLeast(0)
@@ -734,10 +773,10 @@ class GnomeHomeActivity : Activity() {
             setPadding(0, dp(8), 0, dp(8))
             setOnClickListener { action() }
             isClickable = true
-            background = rounded(Color.argb(45, 210, 210, 255), 12)
+            background = rounded(themeColors()[2], 12)
         }
-        item.addView(label(glyph, 22, Color.WHITE, true).apply { gravity = Gravity.CENTER })
-        item.addView(label(caption, 8, muted, true).apply { gravity = Gravity.CENTER })
+        item.addView(label(glyph, 22, themeColors()[1], true).apply { gravity = Gravity.CENTER })
+        item.addView(label(caption, 8, themeColors()[3], true).apply { gravity = Gravity.CENTER })
         val lp = LinearLayout.LayoutParams(-1, dp(58))
         lp.bottomMargin = dp(8)
         dock.addView(item, lp)
