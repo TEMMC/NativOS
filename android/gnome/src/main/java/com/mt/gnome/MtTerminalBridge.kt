@@ -18,6 +18,18 @@ class MtTerminalBridge(
     private val terminalView: TerminalView
 ) : TerminalSessionClient, TerminalViewClient {
 
+    @Volatile private var attachedSession: TerminalSession? = null
+    @Volatile private var controlKeyEnabled = false
+
+    @Synchronized fun attachSession(session: TerminalSession) {
+        attachedSession = session
+        terminalView.attachSession(session)
+        terminalView.onScreenUpdated()
+    }
+
+    fun toggleControlKey(): Boolean { controlKeyEnabled = !controlKeyEnabled; return controlKeyEnabled }
+    fun isControlKeyEnabled(): Boolean = controlKeyEnabled
+
     init {
         terminalView.setTerminalViewClient(this)
         terminalView.isFocusable = true
@@ -27,11 +39,11 @@ class MtTerminalBridge(
     }
 
     override fun onTextChanged(changedSession: TerminalSession) {
-        terminalView.post { terminalView.onScreenUpdated() }
+        if (attachedSession === changedSession) terminalView.post { if (attachedSession === changedSession) terminalView.onScreenUpdated() }
     }
     override fun onTitleChanged(changedSession: TerminalSession) = Unit
     override fun onSessionFinished(finishedSession: TerminalSession) {
-        terminalView.post { terminalView.onScreenUpdated() }
+        if (attachedSession === finishedSession) terminalView.post { if (attachedSession === finishedSession) terminalView.onScreenUpdated() }
     }
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -73,7 +85,7 @@ class MtTerminalBridge(
     override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean = false
     override fun onKeyUp(keyCode: Int, e: KeyEvent): Boolean = false
     override fun onLongPress(event: MotionEvent): Boolean = false
-    override fun readControlKey(): Boolean = false
+    override fun readControlKey(): Boolean = controlKeyEnabled
     override fun readAltKey(): Boolean = false
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
