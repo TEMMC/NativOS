@@ -437,7 +437,7 @@ class TerminalActivity : Activity() {
                 if (!actual.equals(expected, true)) { archive.delete(); throw SecurityException("Checksum mismatch; archive deleted.") }
                 runOnUiThread { updateInstallPhase("Extracting root filesystem…"); append("[Checksum verified. Extracting minimal root filesystem…]\n") }
                 val a = archiveFile.absolutePath
-                val script = "set -e; mkdir -p '$alpineRoot'; tar -xzf '$a' -C '$alpineRoot'; mkdir -p '$alpineRoot/etc/apk' '$alpineRoot/dev' '$alpineRoot/proc' '$alpineRoot/sys' '$alpineRoot/run'; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > '$alpineRoot/etc/resolv.conf'; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > '$alpineRoot/etc/apk/repositories'; test -x '$alpineRoot/bin/sh' && test -d '$alpineRoot/usr' && test -d '$alpineRoot/etc'; printf '%s\\n' 'alpine:${alpineVersion}' > '$alpineRoot/.mt-installed'"
+                val script = "set -e; TARGET='$alpineRoot'; STAGING='$alpineRoot.installing'; BACKUP='$alpineRoot.previous'; rm -rf \"\$STAGING\"; mkdir -p \"\$STAGING\"; tar -xzf '$a' -C \"\$STAGING\"; mkdir -p \"\$STAGING/etc/apk\" \"\$STAGING/dev\" \"\$STAGING/proc\" \"\$STAGING/sys\" \"\$STAGING/run\"; printf '%s\\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > \"\$STAGING/etc/resolv.conf\"; printf '%s\\n' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/main' 'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/community' > \"\$STAGING/etc/apk/repositories\"; test -x \"\$STAGING/bin/sh\" && test -d \"\$STAGING/usr\" && test -d \"\$STAGING/etc\"; printf '%s\\n' 'alpine:$alpineVersion' > \"\$STAGING/.mt-installed\"; rm -rf \"\$BACKUP\"; if [ -e \"\$TARGET\" ]; then mv \"\$TARGET\" \"\$BACKUP\"; fi; if mv \"\$STAGING\" \"\$TARGET\"; then rm -rf \"\$BACKUP\"; else [ ! -e \"\$BACKUP\" ] || mv \"\$BACKUP\" \"\$TARGET\"; exit 1; fi"
                 val result = rootExec(script)
                 archiveFile.delete()
                 if (result.first != 0) error("Root extraction failed: ${result.second}")
@@ -449,7 +449,13 @@ class TerminalActivity : Activity() {
                 }
             } catch (e: Exception) {
                 archive?.delete()
-                runOnUiThread { dismissInstallProgress(); append("[Installation failed] ${e.message}\n"); append("No distro was selected. Retry from DISTROS.\n"); busy = false; terminalView.isEnabled = true }
+                rootExec("rm -rf '$alpineRoot.installing'")
+                runOnUiThread {
+                    if (activityDestroyed || isFinishing || isDestroyed) return@runOnUiThread
+                    dismissInstallProgress(); append("[Installation failed] ${e.message}\n")
+                    append("No distro was selected. Retry from DISTROS.\n")
+                    busy = false; terminalView.isEnabled = true
+                }
             }
         }.start()
     }
