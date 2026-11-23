@@ -51,7 +51,14 @@ class MtTerminalBridge(
     }
     override fun onTitleChanged(changedSession: TerminalSession) = Unit
     override fun onSessionFinished(finishedSession: TerminalSession) {
-        if (attachedSession === finishedSession) terminalView.post { if (attachedSession === finishedSession) terminalView.onScreenUpdated() }
+        if (attachedSession === finishedSession) {
+            terminalView.post {
+                if (attachedSession === finishedSession) terminalView.onScreenUpdated()
+            }
+        }
+        // Notify the owning Activity so an exited shell is no longer presented as
+        // a live session and input cannot be sent into a dead PTY.
+        (context as? TerminalActivity)?.onVtSessionFinished(finishedSession)
     }
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
