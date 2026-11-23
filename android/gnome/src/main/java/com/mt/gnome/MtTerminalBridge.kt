@@ -27,6 +27,14 @@ class MtTerminalBridge(
         terminalView.onScreenUpdated()
     }
 
+    @Synchronized fun detachSession(session: TerminalSession?) {
+        // A null argument means detach unconditionally during Activity teardown.
+        if (session != null && attachedSession !== session) return
+        attachedSession = null
+        terminalView.attachSession(null)
+        terminalView.invalidate()
+    }
+
     fun toggleControlKey(): Boolean { controlKeyEnabled = !controlKeyEnabled; return controlKeyEnabled }
     fun isControlKeyEnabled(): Boolean = controlKeyEnabled
 
@@ -59,7 +67,9 @@ class MtTerminalBridge(
     }
     override fun onBell(session: TerminalSession) = Unit
     override fun onColorsChanged(session: TerminalSession) {
-        terminalView.post { terminalView.invalidate() }
+        if (attachedSession === session) terminalView.post {
+            if (attachedSession === session) terminalView.invalidate()
+        }
     }
     override fun onTerminalCursorStateChange(state: Boolean) = Unit
     override fun getTerminalCursorStyle(): Int? = null
