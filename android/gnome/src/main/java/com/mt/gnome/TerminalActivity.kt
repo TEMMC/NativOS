@@ -693,8 +693,10 @@ class TerminalActivity : Activity() {
             awaitSessionReady(session, initialCommand)
         } catch (e: Exception) {
             appendToSession(session, "[VT terminal startup failed] ${e.message}\n")
-            session.starting = false
-            if (activeSession === session) { busy = false; terminalView.isEnabled = true }
+            closeSession(session)
+            if (activeSession == null) activeSession = sessions.lastOrNull()
+            if (activeSession != null) showActiveSession()
+            else { busy = false; terminalView.isEnabled = false }
             renderSessionTabs()
         }
     }
@@ -719,11 +721,14 @@ class TerminalActivity : Activity() {
             } else if (attempt < 80) {
                 awaitSessionReady(session, initialCommand, attempt + 1)
             } else {
-                session.starting = false
-                appendToSession(session, "[Shell startup timed out: the PTY process did not become ready. Close this tab and retry.]\n")
-                if (activeSession === session) {
+                appendToSession(session, "[Shell startup timed out: the PTY process did not become ready. The failed PTY is being closed.]\n")
+                closeSession(session)
+                if (activeSession == null) activeSession = sessions.lastOrNull()
+                if (activeSession != null) showActiveSession()
+                else {
                     busy = false
                     terminalView.isEnabled = false
+                    output.text = "Shell startup failed • tap + to retry"
                 }
                 renderSessionTabs()
             }
@@ -909,7 +914,7 @@ class TerminalActivity : Activity() {
             (pendingShutdownByDistro[distroId] ?: 0) == 0 &&
                 sessions.none { it.distroId == distroId && !it.closing && !it.exited }
         }
-        if (!safeToUnmount || !activityDestroyed) return
+        if (!safeToUnmount) return
         try {
             val r = rootExec("R='${root(distroId)}'; mountpoint -q \"\$R/dev/pts\" && umount \"\$R/dev/pts\" || true; mountpoint -q \"\$R/dev\" && umount \"\$R/dev\" || true; mountpoint -q \"\$R/proc\" && umount \"\$R/proc\" || true; mountpoint -q \"\$R/sys\" && umount \"\$R/sys\" || true")
             if (r.first != 0) android.util.Log.w("MT-GNOME", "Distro mount cleanup returned ${r.first}: ${r.second}")
@@ -922,6 +927,7 @@ class TerminalActivity : Activity() {
         val session = synchronized(sessionLock) { sessions.firstOrNull { it.vtSession === finished } } ?: return
         session.starting = false
         session.exited = true
+        Thread({ cleanupDistroMountsIfIdle(session.distroId) }, "MT-Terminal-mount-cleanup").apply { isDaemon = true; start() }
         if (!activityDestroyed) runOnUiThread {
             if (activityDestroyed || isFinishing || isDestroyed) return@runOnUiThread
             if (activeSession === session) {
