@@ -167,6 +167,7 @@ class PointerOverlayService : Service() {
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
+                if (twoFinger && abs(accumulatedScroll) > dp(5)) sendScroll(accumulatedScroll)
                 twoFinger = false
                 return true
             }
