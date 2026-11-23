@@ -59,6 +59,7 @@ class TerminalActivity : Activity() {
     private lateinit var output: TextView
     private lateinit var terminalView: TerminalView
     private lateinit var terminalBridge: MtTerminalBridge
+    private var ctrlButton: Button? = null
     private lateinit var scroll: FrameLayout
     private var busy = false
     private var active: String? = null
@@ -201,7 +202,7 @@ class TerminalActivity : Activity() {
         toolbar.addView(btn("Copy") { copyTerminalSelection() })
         toolbar.addView(btn("Paste") { pasteClipboard() })
         toolbar.addView(btn("Clear") { clearActiveTerminal() })
-        toolbar.addView(btn("Ctrl+C") { sendPty("\u0003") })
+        toolbar.addView(btn("Ctrl") { terminalBridge.toggleControlKey(); renderControlButton() }.also { ctrlButton = it })
         toolbar.addView(btn("Ctrl+D") { sendPty("\u0004") })
         toolbar.addView(btn("Tab") { sendPty("\t") })
         toolbar.addView(btn("Esc") { sendPty("\u001b") })
@@ -601,6 +602,8 @@ class TerminalActivity : Activity() {
             .setPositiveButton("OK", null).show()
     }
 
+    private fun renderControlButton() { ctrlButton?.apply { text = if (terminalBridge.isControlKeyEnabled()) "Ctrl ✓" else "Ctrl"; setTextColor(if (terminalBridge.isControlKeyEnabled()) Color.rgb(111,220,170) else Color.WHITE) } }
+
     private fun runCommand() { sendPty("\r") }
 
     internal fun focusTerminalInput() {
@@ -628,6 +631,10 @@ class TerminalActivity : Activity() {
     }
 
     private fun startSession(distroId: String, initialCommand: String = "") {
+        if (sessions.count { !it.closing } >= 4) {
+            Toast.makeText(this, "Close an existing terminal tab before opening another (maximum 4).", Toast.LENGTH_LONG).show()
+            return
+        }
         if (!exists(distroId)) {
             append("\n[${name(distroId)} is not installed. Choose an installed distribution first.]\n")
             showCatalogue()
@@ -672,7 +679,7 @@ class TerminalActivity : Activity() {
                 terminalBridge
             )
             session.vtSession = vt
-            terminalView.attachSession(vt)
+            terminalBridge.attachSession(vt)
             session.starting = true
             busy = true
             terminalView.isEnabled = false
@@ -782,7 +789,7 @@ class TerminalActivity : Activity() {
         activeSession = session
         active = session.distroId
         prefs.edit().putString("active_distro", active).apply()
-        if (vt != null) terminalView.attachSession(vt)
+        if (vt != null) terminalBridge.attachSession(vt)
         showActiveSession()
         renderSessionTabs()
     }
@@ -793,7 +800,7 @@ class TerminalActivity : Activity() {
         busy = session?.starting ?: false
         terminalView.isEnabled = !busy && (session?.vtSession?.let { try { it.isRunning } catch (_: Exception) { false } } == true)
         if (session?.vtSession != null) {
-            terminalView.attachSession(session.vtSession!!)
+            terminalBridge.attachSession(session.vtSession!!)
             terminalView.onScreenUpdated()
         }
         scroll.post { resizePty() }
@@ -867,11 +874,13 @@ class TerminalActivity : Activity() {
         // Never SIGKILL a session from the UI thread while its emulator is attached.
         if (vt != null) Thread({
             try {
-                if (vt.isRunning) vt.finishIfRunning()
+                synchronized(ptyLock) {
+                    if (vt.isRunning) vt.finishIfRunning()
+                }
             } catch (e: Exception) {
                 android.util.Log.w("MT-GNOME", "Could not stop terminal session", e)
             }
-        }, "MT-Terminal-close").start()
+        }, "MT-Terminal-close-${session.number}").start()
     }
 
     private fun closeAllSessions() {
