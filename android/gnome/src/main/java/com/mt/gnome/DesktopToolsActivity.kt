@@ -103,6 +103,15 @@ class DesktopToolsActivity : Activity() {
         row(button("VPN") { openSettings(Settings.ACTION_VPN_SETTINGS) },
             button("Date & time") { openSettings(Settings.ACTION_DATE_SETTINGS) })
 
+        section("Productivity", "Lightweight native shortcuts and offline notes.")
+        row(button("Notes") { openNotes() }, button("Calendar") { openExternal(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALENDAR)) })
+        row(button("Clock & alarms") { openExternal(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CLOCK)) },
+            button("Web browser") { openExternal(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://example.com"))) })
+        row(button("Downloads") {
+            try { startActivity(Intent(android.provider.Downloads.Impl.ACTION_VIEW_DOWNLOADS)) }
+            catch (_: Exception) { openExternal(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("content://downloads/my_downloads"))) }
+        }, button("Share text") { shareNotes() })
+
         section("Clipboard", "Quick access to the current clipboard item. Android may restrict background clipboard reads.")
         row(button("View clipboard") { showClipboard() },
             button("Clear clipboard") { clearClipboard() })
@@ -124,16 +133,83 @@ class DesktopToolsActivity : Activity() {
             openSettings(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
         })
 
-        section("Workspaces", "Android does not expose independent virtual desktops to ordinary apps. MT-GNOME can provide saved desktop profiles, but true independent workspaces require an in-app window manager.")
+        section("Desktop profiles", "Save four independent preference profiles. Android app windows remain managed by Android; this does not yet create isolated window workspaces.")
         val prefs = getSharedPreferences("mt_gnome", MODE_PRIVATE)
         val active = prefs.getInt("active_workspace", 1)
         row(*(1..4).map { number ->
-            button(if (number == active) "Workspace $number ✓" else "Workspace $number") {
+            button(if (number == active) "Profile $number ✓" else "Profile $number") {
                 prefs.edit().putInt("active_workspace", number).apply()
-                toast("Workspace profile $number selected. Independent window spaces are not yet implemented.")
+                toast("Desktop profile $number selected")
                 buildTools()
             }
         }.toTypedArray())
+        row(button("Rename active profile") { renameProfile(active) },
+            button("Reset profile name") {
+                prefs.edit().remove("workspace_name_$active").apply()
+                buildTools()
+            })
+    }
+
+    private fun openExternal(intent: Intent) {
+        try { startActivity(intent) } catch (_: Exception) { toast("No compatible application is installed") }
+    }
+
+    private fun openNotes() {
+        val prefs = getSharedPreferences("mt_gnome_notes", MODE_PRIVATE)
+        val editor = android.widget.EditText(this).apply {
+            minLines = 8
+            gravity = Gravity.TOP or Gravity.START
+            setText(prefs.getString("notes", ""))
+            hint = "Write notes. They are saved locally on this device."
+            textSize = 14f
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("MT-GNOME Notes")
+            .setView(editor)
+            .setPositiveButton("Save") { _, _ ->
+                prefs.edit().putString("notes", editor.text.toString()).apply()
+                toast("Notes saved on this device")
+            }
+            .setNeutralButton("Share") { _, _ ->
+                prefs.edit().putString("notes", editor.text.toString()).apply()
+                shareText(editor.text.toString())
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun shareNotes() {
+        val value = getSharedPreferences("mt_gnome_notes", MODE_PRIVATE).getString("notes", "").orEmpty()
+        if (value.isBlank()) { openNotes(); return }
+        shareText(value)
+    }
+
+    private fun shareText(value: String) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, value)
+        }
+        try { startActivity(Intent.createChooser(intent, "Share from MT-GNOME")) }
+        catch (_: Exception) { toast("No sharing application is available") }
+    }
+
+    private fun renameProfile(number: Int) {
+        val editor = android.widget.EditText(this).apply {
+            setSingleLine(true)
+            hint = "Profile name"
+            setText(getSharedPreferences("mt_gnome", MODE_PRIVATE).getString("workspace_name_$number", "Profile $number"))
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Rename desktop profile")
+            .setView(editor)
+            .setPositiveButton("Save") { _, _ ->
+                val name = editor.text.toString().trim().take(32)
+                if (name.isNotEmpty()) getSharedPreferences("mt_gnome", MODE_PRIVATE)
+                    .edit().putString("workspace_name_$number", name).apply()
+                buildTools()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showInstalledApps() {
