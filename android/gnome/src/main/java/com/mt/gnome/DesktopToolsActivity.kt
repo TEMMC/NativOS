@@ -108,8 +108,7 @@ class DesktopToolsActivity : Activity() {
         row(button("Clock & alarms") { openExternal(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CLOCK)) },
             button("Web browser") { openExternal(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://example.com"))) })
         row(button("Downloads") {
-            try { startActivity(Intent(android.provider.Downloads.Impl.ACTION_VIEW_DOWNLOADS)) }
-            catch (_: Exception) { openExternal(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("content://downloads/my_downloads"))) }
+            openExternal(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("content://downloads/my_downloads")))
         }, button("Share text") { shareNotes() })
 
         section("Clipboard", "Quick access to the current clipboard item. Android may restrict background clipboard reads.")
