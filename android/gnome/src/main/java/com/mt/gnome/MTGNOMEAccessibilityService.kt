@@ -6,8 +6,25 @@ import android.graphics.Path
 import android.view.accessibility.AccessibilityEvent
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
+import android.content.Intent
 
 class MTGNOMEAccessibilityService : AccessibilityService() {
+    private val keyHandler = Handler(Looper.getMainLooper())
+    private var volumeUpDown = false
+    private var volumeDownDown = false
+    private var chordTriggered = false
+    private val chordAction = Runnable {
+        if (volumeUpDown && volumeDownDown && !chordTriggered) {
+            chordTriggered = true
+            val prefs = getSharedPreferences("mt_gnome", MODE_PRIVATE)
+            val enableTrackpad = prefs.getString("input_mode", "direct") != "trackpad"
+            prefs.edit().putString("input_mode", if (enableTrackpad) "trackpad" else "direct").apply()
+            if (enableTrackpad) startService(Intent(this, PointerOverlayService::class.java))
+            else stopService(Intent(this, PointerOverlayService::class.java))
+            android.widget.Toast.makeText(this, if (enableTrackpad) "Trackpad enabled" else "Direct touch enabled", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
     companion object {
         @Volatile private var active: MTGNOMEAccessibilityService? = null
         fun isConnected(): Boolean = active != null
@@ -40,5 +57,21 @@ class MTGNOMEAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() { super.onServiceConnected(); active = this }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode != KeyEvent.KEYCODE_VOLUME_UP && event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return super.onKeyEvent(event)
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) volumeUpDown = true else volumeDownDown = true
+                if (volumeUpDown && volumeDownDown && !chordTriggered) keyHandler.postDelayed(chordAction, 3000L)
+            }
+            KeyEvent.ACTION_UP -> {
+                keyHandler.removeCallbacks(chordAction)
+                if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) volumeUpDown = false else volumeDownDown = false
+                if (!volumeUpDown || !volumeDownDown) chordTriggered = false
+            }
+        }
+        return true
+    }
     override fun onDestroy() { if (active === this) active = null; super.onDestroy() }
 }
