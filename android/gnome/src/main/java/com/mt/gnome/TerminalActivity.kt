@@ -72,12 +72,15 @@ class TerminalActivity : Activity() {
     private data class ShellSession(
         val number: Int, val distroId: String, val buffer: StringBuilder = StringBuilder(),
         var starting: Boolean = true,
-        var closing: Boolean = false,
-        var vtSession: TerminalSession? = null
+        @Volatile var closing: Boolean = false,
+        @Volatile var exited: Boolean = false,
+        @Volatile var vtSession: TerminalSession? = null
     )
     private val sessions = mutableListOf<ShellSession>()
     private var activeSession: ShellSession? = null
     private var sessionCounter = 0
+    private val sessionLock = Any()
+    @Volatile private var activityDestroyed = false
     private lateinit var sessionTabs: LinearLayout
 
     companion object {
@@ -777,7 +780,7 @@ class TerminalActivity : Activity() {
         val alive = try { vt != null && vt.isRunning } catch (_: Exception) { false }
         // A session still launching is not a dead session. Keep its tab attached
         // instead of destroying it and spawning another shell.
-        if (!session.starting && !alive) {
+        if (!session.starting && (!alive || session.exited)) {
             appendToSession(session, "\n[This shell has exited. Use + to open a new session.]\n")
             return
         }
@@ -860,20 +863,57 @@ class TerminalActivity : Activity() {
     }
 
     private fun closeSession(session: ShellSession) {
-        if (session.closing) return
-        session.closing = true
-        session.starting = false
-        val vt = session.vtSession
-        session.vtSession = null
-        // Detach before shutdown so late PTY callbacks cannot render a closing session.
+        val vt: TerminalSession?
+        synchronized(sessionLock) {
+            if (session.closing) return
+            session.closing = true
+            session.starting = false
+            vt = session.vtSession
+            session.vtSession = null
+        }
         terminalBridge.detachSession(vt)
-        if (vt != null) Thread({
+        if (vt == null) {
+            session.exited = true
+            return
+        }
+        Thread({
             try {
                 if (vt.isRunning) vt.finishIfRunning()
             } catch (e: Exception) {
                 android.util.Log.w("MT-GNOME", "Could not stop terminal session " + session.number, e)
+            } finally {
+                session.exited = true
+                cleanupDistroMountsIfIdle(session.distroId)
             }
         }, "MT-Terminal-close-${session.number}").apply { isDaemon = true }.start()
+    }
+
+    private fun cleanupDistroMountsIfIdle(distroId: String) {
+        val inUse = synchronized(sessionLock) {
+            sessions.any { it.distroId == distroId && !it.closing && !it.exited }
+        }
+        if (inUse || !activityDestroyed) return
+        try {
+            val r = rootExec("R='${root(distroId)}'; mountpoint -q \"\$R/dev/pts\" && umount \"\$R/dev/pts\" || true; mountpoint -q \"\$R/dev\" && umount \"\$R/dev\" || true; mountpoint -q \"\$R/proc\" && umount \"\$R/proc\" || true; mountpoint -q \"\$R/sys\" && umount \"\$R/sys\" || true")
+            if (r.first != 0) android.util.Log.w("MT-GNOME", "Distro mount cleanup returned ${r.first}: ${r.second}")
+        } catch (e: Exception) {
+            android.util.Log.w("MT-GNOME", "Distro mount cleanup failed", e)
+        }
+    }
+
+    internal fun onVtSessionFinished(finished: TerminalSession) {
+        val session = synchronized(sessionLock) { sessions.firstOrNull { it.vtSession === finished } } ?: return
+        session.starting = false
+        session.exited = true
+        if (!activityDestroyed) runOnUiThread {
+            if (activityDestroyed || isFinishing || isDestroyed) return@runOnUiThread
+            if (activeSession === session) {
+                busy = false
+                terminalView.isEnabled = false
+                output.text = "Shell exited • ${name(session.distroId)}"
+            }
+            renderSessionTabs()
+        }
     }
 
     private fun closeAllSessions() {
@@ -900,21 +940,38 @@ class TerminalActivity : Activity() {
     }
 
     override fun onDestroy() {
-        // Remove the old Activity's overlay synchronously before stopping its
-        // foreground service. A rapid reopen must never inherit a stale View.
-        FloatingTerminalService.detachOverlay()
-        overlayContent = null
-        hostActivity = null
+        activityDestroyed = true
+        FloatingTerminalService.detachOverlay(this)
+        if (hostActivity === this) {
+            overlayContent = null
+            hostActivity = null
+        }
         closeAllSessions()
         stopService(Intent(this, FloatingTerminalService::class.java))
         super.onDestroy()
     }
 
-    private fun rootExec(script: String): Pair<Int, String> {
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "exec 2>&1; $script"))
+    private fun rootExec(script: String, timeoutSeconds: Long = 90): Pair<Int, String> {
+        val p = Runtime.getRuntime().exec(arrayOf(resolveSuExecutable(), "-c", "exec 2>&1; $script"))
         val out = StringBuilder()
-        BufferedReader(InputStreamReader(p.inputStream)).use { r -> var line: String?; while (r.readLine().also { line = it } != null) out.append(line).append('\n') }
-        return Pair(p.waitFor(), out.toString())
+        val reader = Thread {
+            try {
+                BufferedReader(InputStreamReader(p.inputStream)).use { r ->
+                    var line: String?
+                    while (r.readLine().also { line = it } != null) synchronized(out) { out.append(line).append('\n') }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MT-GNOME", "Root command output reader stopped", e)
+            }
+        }.apply { isDaemon = true; start() }
+        if (!p.waitFor(timeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)) {
+            p.destroy()
+            if (p.isAlive) p.destroyForcibly()
+            reader.join(500)
+            return Pair(124, "Root command timed out after $timeoutSeconds seconds")
+        }
+        reader.join(1500)
+        return Pair(p.exitValue(), synchronized(out) { out.toString() })
     }
 
     private fun append(s: String) {
