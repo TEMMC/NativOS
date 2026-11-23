@@ -115,6 +115,15 @@ class DesktopToolsActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     android.net.Uri.parse("package:$packageName")))
             })
+        section("Applications & processes", "Browse launchable Android apps and inspect processes visible to this app. Android may hide other apps' process details.")
+        row(button("Installed apps") { showInstalledApps() },
+            button("Running processes") { showRunningProcesses() })
+        row(button("Open app settings") {
+            startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS))
+        }, button("Manage storage") {
+            openSettings(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
+        })
+
         section("Workspaces", "Android does not expose independent virtual desktops to ordinary apps. MT-GNOME can provide saved desktop profiles, but true independent workspaces require an in-app window manager.")
         val prefs = getSharedPreferences("mt_gnome", MODE_PRIVATE)
         val active = prefs.getInt("active_workspace", 1)
@@ -125,6 +134,47 @@ class DesktopToolsActivity : Activity() {
                 buildTools()
             }
         }.toTypedArray())
+    }
+
+    private fun showInstalledApps() {
+        val launchIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(launchIntent, 0)
+            .filter { it.activityInfo.packageName != packageName }
+            .sortedBy { it.loadLabel(packageManager).toString().lowercase(Locale.getDefault()) }
+        if (apps.isEmpty()) {
+            toast("No launchable applications found")
+            return
+        }
+        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Installed applications")
+            .setItems(labels) { _, index ->
+                val info = apps[index]
+                val launch = packageManager.getLaunchIntentForPackage(info.activityInfo.packageName)
+                if (launch != null) {
+                    try { startActivity(launch) } catch (_: Exception) { toast("Could not launch " + labels[index]) }
+                } else toast("No launcher activity for " + labels[index])
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showRunningProcesses() {
+        val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val processes = try { manager.runningAppProcesses.orEmpty() } catch (_: Exception) { emptyList() }
+        val message = if (processes.isEmpty()) {
+            "Android did not expose process details to MT-GNOME. This is normal on modern Android versions."
+        } else {
+            processes.sortedBy { it.processName }.joinToString("\\n") {
+                it.processName + "  ·  PID " + it.pid + "  ·  " + it.importanceReasonCode
+            }
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Visible running processes")
+            .setMessage(message)
+            .setPositiveButton("Refresh") { _, _ -> showRunningProcesses() }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun readBatteryStatus(): String {
