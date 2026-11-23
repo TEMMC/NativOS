@@ -80,6 +80,7 @@ class TerminalActivity : Activity() {
     private var activeSession: ShellSession? = null
     private var sessionCounter = 0
     private val sessionLock = Any()
+    private val pendingShutdownByDistro = mutableMapOf<String, Int>()
     @Volatile private var activityDestroyed = false
     private lateinit var sessionTabs: LinearLayout
 
@@ -870,6 +871,10 @@ class TerminalActivity : Activity() {
             session.starting = false
             vt = session.vtSession
             session.vtSession = null
+            sessions.remove(session)
+            if (activeSession === session) activeSession = sessions.lastOrNull()
+            if (vt != null) pendingShutdownByDistro[session.distroId] =
+                (pendingShutdownByDistro[session.distroId] ?: 0) + 1
         }
         terminalBridge.detachSession(vt)
         if (vt == null) {
@@ -883,16 +888,22 @@ class TerminalActivity : Activity() {
                 android.util.Log.w("MT-GNOME", "Could not stop terminal session " + session.number, e)
             } finally {
                 session.exited = true
+                synchronized(sessionLock) {
+                    val remaining = (pendingShutdownByDistro[session.distroId] ?: 1) - 1
+                    if (remaining <= 0) pendingShutdownByDistro.remove(session.distroId)
+                    else pendingShutdownByDistro[session.distroId] = remaining
+                }
                 cleanupDistroMountsIfIdle(session.distroId)
             }
         }, "MT-Terminal-close-${session.number}").apply { isDaemon = true }.start()
     }
 
     private fun cleanupDistroMountsIfIdle(distroId: String) {
-        val inUse = synchronized(sessionLock) {
-            sessions.any { it.distroId == distroId && !it.closing && !it.exited }
+        val safeToUnmount = synchronized(sessionLock) {
+            (pendingShutdownByDistro[distroId] ?: 0) == 0 &&
+                sessions.none { it.distroId == distroId && !it.closing && !it.exited }
         }
-        if (inUse || !activityDestroyed) return
+        if (!safeToUnmount || !activityDestroyed) return
         try {
             val r = rootExec("R='${root(distroId)}'; mountpoint -q \"\$R/dev/pts\" && umount \"\$R/dev/pts\" || true; mountpoint -q \"\$R/dev\" && umount \"\$R/dev\" || true; mountpoint -q \"\$R/proc\" && umount \"\$R/proc\" || true; mountpoint -q \"\$R/sys\" && umount \"\$R/sys\" || true")
             if (r.first != 0) android.util.Log.w("MT-GNOME", "Distro mount cleanup returned ${r.first}: ${r.second}")
@@ -917,11 +928,39 @@ class TerminalActivity : Activity() {
     }
 
     private fun closeAllSessions() {
-        val closing = sessions.toList()
-        sessions.clear()
-        activeSession = null
+        val closing = synchronized(sessionLock) {
+            val snapshot = sessions.toList()
+            sessions.clear()
+            activeSession = null
+            snapshot.forEach { it.closing = true; it.starting = false }
+            snapshot.mapNotNull { session ->
+                val vt = session.vtSession
+                session.vtSession = null
+                if (vt != null) pendingShutdownByDistro[session.distroId] =
+                    (pendingShutdownByDistro[session.distroId] ?: 0) + 1
+                if (vt == null) session.exited = true
+                vt?.let { session to it }
+            }
+        }
         terminalBridge.detachSession(null)
-        closing.forEach { closeSession(it) }
+        if (closing.isEmpty()) return
+        Thread({
+            closing.forEach { (session, vt) ->
+                try {
+                    if (vt.isRunning) vt.finishIfRunning()
+                } catch (e: Exception) {
+                    android.util.Log.w("MT-GNOME", "Could not stop terminal session " + session.number, e)
+                } finally {
+                    session.exited = true
+                    synchronized(sessionLock) {
+                        val remaining = (pendingShutdownByDistro[session.distroId] ?: 1) - 1
+                        if (remaining <= 0) pendingShutdownByDistro.remove(session.distroId)
+                        else pendingShutdownByDistro[session.distroId] = remaining
+                    }
+                }
+            }
+            closing.map { it.first.distroId }.distinct().forEach { cleanupDistroMountsIfIdle(it) }
+        }, "MT-Terminal-close-all").apply { isDaemon = true }.start()
     }
 
     private fun cleanTerminalText(value: String): String {
