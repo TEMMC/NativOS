@@ -900,10 +900,13 @@ class TerminalActivity : Activity() {
     }
 
     override fun onDestroy() {
+        // Remove the old Activity's overlay synchronously before stopping its
+        // foreground service. A rapid reopen must never inherit a stale View.
+        FloatingTerminalService.detachOverlay()
         overlayContent = null
         hostActivity = null
-        stopService(Intent(this, FloatingTerminalService::class.java))
         closeAllSessions()
+        stopService(Intent(this, FloatingTerminalService::class.java))
         super.onDestroy()
     }
 
