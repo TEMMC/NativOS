@@ -2,6 +2,10 @@ package com.mt.gnome
 
 import android.app.Activity
 import android.app.ActivityManager
+import android.content.IntentFilter
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.BatteryManager
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -79,17 +83,38 @@ class DesktopToolsActivity : Activity() {
             try { startActivity(intent) } catch (_: Exception) { toast("No file picker is available") }
         })
 
-        section("Desktop controls", "Shortcuts to Android-managed controls.")
+        section("Desktop controls", "Shortcuts to Android-managed controls. Android remains responsible for privileged radios and system policies.")
         row(button("Notifications") { openSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) },
             button("Display") { openSettings(Settings.ACTION_DISPLAY_SETTINGS) })
         row(button("Wi-Fi") { openSettings(Settings.ACTION_WIFI_SETTINGS) },
             button("Bluetooth") { openSettings(Settings.ACTION_BLUETOOTH_SETTINGS) })
+        row(button("Sound") { openSettings(Settings.ACTION_SOUND_SETTINGS) },
+            button("Battery") { openSettings(Settings.ACTION_BATTERY_SAVER_SETTINGS) })
+        row(button("Language") { openSettings(Settings.ACTION_LOCALE_SETTINGS) },
+            button("Accessibility") { openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) })
         row(button("App permissions") {
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 android.net.Uri.parse("package:$packageName")))
         }, button("Overlay permission") {
             openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
         })
+        row(button("Developer options") { openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS) },
+            button("Default apps") { openSettings(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS) })
+        row(button("VPN") { openSettings(Settings.ACTION_VPN_SETTINGS) },
+            button("Date & time") { openSettings(Settings.ACTION_DATE_SETTINGS) })
+
+        section("Clipboard", "Quick access to the current clipboard item. Android may restrict background clipboard reads.")
+        row(button("View clipboard") { showClipboard() },
+            button("Clear clipboard") { clearClipboard() })
+
+        section("Device status", "Battery, charging and hardware status reported by Android.")
+        val batteryText = text(readBatteryStatus(), 12, Color.rgb(220, 226, 240))
+        card(batteryText)
+        row(button("Refresh all status") { refreshMonitor(); batteryText.text = readBatteryStatus() },
+            button("App information") {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")))
+            })
         section("Workspaces", "Android does not expose independent virtual desktops to ordinary apps. MT-GNOME can provide saved desktop profiles, but true independent workspaces require an in-app window manager.")
         val prefs = getSharedPreferences("mt_gnome", MODE_PRIVATE)
         val active = prefs.getInt("active_workspace", 1)
@@ -100,6 +125,58 @@ class DesktopToolsActivity : Activity() {
                 buildTools()
             }
         }.toTypedArray())
+    }
+
+    private fun readBatteryStatus(): String {
+        val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            ?: return "Battery information unavailable"
+        val level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
+        val percent = if (level >= 0) level * 100 / scale else -1
+        val status = when (battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1)) {
+            BatteryManager.BATTERY_STATUS_CHARGING -> "Charging"
+            BatteryManager.BATTERY_STATUS_FULL -> "Full"
+            BatteryManager.BATTERY_STATUS_DISCHARGING -> "Discharging"
+            BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "Not charging"
+            else -> "Unknown"
+        }
+        val plugged = when (battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)) {
+            BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+            BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless"
+            else -> "Not connected"
+        }
+        val temperature = battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1)
+        val tempText = if (temperature >= 0) String.format(Locale.US, "%.1f °C", temperature / 10f) else "Unavailable"
+        return "Battery: " + (if (percent >= 0) "$percent%" else "Unavailable") +
+            "\nStatus: " + status + "\nPower source: " + plugged + "\nBattery temperature: " + tempText
+    }
+
+    private fun showClipboard() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val value = try {
+            clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        } catch (_: Exception) { null }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Clipboard")
+            .setMessage(value?.takeIf { it.isNotBlank() } ?: "Clipboard is empty or Android denied access.")
+            .setPositiveButton("Copy text") { _, _ ->
+                if (!value.isNullOrBlank()) {
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MT-GNOME", value))
+                    toast("Clipboard text copied")
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun clearClipboard() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 28) clipboard.clearPrimaryClip()
+            else clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+            toast("Clipboard cleared")
+        } catch (_: Exception) { toast("Android did not allow clipboard access") }
     }
 
     private fun refreshMonitor() {
