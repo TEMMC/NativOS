@@ -63,7 +63,8 @@ class DesktopToolsActivity : Activity() {
         section("System monitor", "Live information from Android and Linux kernel procfs.")
         monitorText = text("", 12, Color.rgb(220, 226, 240))
         card(monitorText)
-        row(button("Refresh") { refreshMonitor() }, button("Android settings") {
+        row(button("Refresh") { refreshMonitor() }, button("Export diagnostics") { exportDiagnostics() })
+        row(button("Android settings") {
             startActivity(Intent(Settings.ACTION_SETTINGS))
         })
         refreshMonitor()
@@ -328,10 +329,45 @@ class DesktopToolsActivity : Activity() {
             "Kernel MemAvailable: ${mem["MemAvailable"] ?: "unavailable"}",
             "Storage used: ${formatBytes(used)} / ${formatBytes(total)}",
             "Storage free: ${formatBytes(free)}",
+            "Storage volumes: ${getExternalFilesDirs(null).count { it != null }} available",
             "App heap: ${formatBytes(runtime.totalMemory() - runtime.freeMemory())} / ${formatBytes(runtime.maxMemory())}",
             "Uptime: ${android.os.SystemClock.uptimeMillis() / 1000}s"
         )
         monitorText.text = lines.joinToString("\n")
+    }
+
+    private fun exportDiagnostics() {
+        val mem = readMemInfo()
+        val data = StatFs(Environment.getDataDirectory().absolutePath)
+        val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val memory = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(memory)
+        val report = buildString {
+            appendLine("MT-GNOME diagnostics")
+            appendLine("Generated: \${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(java.util.Date())}")
+            appendLine("Device: \${android.os.Build.MANUFACTURER} \${android.os.Build.MODEL}")
+            appendLine("Android: \${android.os.Build.VERSION.RELEASE} (API \${android.os.Build.VERSION.SDK_INT})")
+            appendLine("App version: \${packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"}")
+            appendLine("ABI: \${android.os.Build.SUPPORTED_ABIS.joinToString()}")
+            appendLine("Processors: \${Runtime.getRuntime().availableProcessors()}")
+            appendLine("RAM total: \${formatBytes(memory.totalMem)}")
+            appendLine("RAM available: \${formatBytes(memory.availMem)}")
+            appendLine("Kernel MemAvailable: \${mem["MemAvailable"] ?: "unavailable"}")
+            appendLine("Data storage total: \${formatBytes(data.totalBytes)}")
+            appendLine("Data storage available: \${formatBytes(data.availableBytes)}")
+            appendLine("External app volumes: \${getExternalFilesDirs(null).count { it != null }}")
+            appendLine("App PID: \${android.os.Process.myPid()}")
+            appendLine("Uptime: \${android.os.SystemClock.uptimeMillis() / 1000}s")
+            appendLine()
+            appendLine("This report excludes account credentials, file contents, and precise location.")
+        }
+        val share = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "MT-GNOME diagnostics")
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        try { startActivity(Intent.createChooser(share, "Share diagnostics")) }
+        catch (_: Exception) { toast("No sharing application is available") }
     }
 
     private fun readMemInfo(): Map<String, String> = try {
