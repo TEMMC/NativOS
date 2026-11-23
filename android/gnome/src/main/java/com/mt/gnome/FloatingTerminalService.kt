@@ -75,7 +75,7 @@ class FloatingTerminalService : Service() {
     private fun attachCurrentOverlay() {
         if (!::wm.isInitialized || content?.isAttachedToWindow == true) return
         val currentOwner = TerminalActivity.hostActivity ?: return
-        val view = currentOwner.overlayContent ?: return
+        val view = TerminalActivity.overlayContent ?: return
         // Do not let an old service instance attach a view from a newer Activity.
         if (owner != null && owner !== currentOwner) detachOverlay()
         owner = currentOwner
