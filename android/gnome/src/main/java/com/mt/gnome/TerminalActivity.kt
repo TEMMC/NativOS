@@ -237,6 +237,7 @@ class TerminalActivity : Activity() {
             setPadding(dp(6), dp(6), dp(6), dp(6))
         }
         terminalBridge = MtTerminalBridge(this, terminalView)
+        renderControlButton()
         scroll.addView(terminalView, FrameLayout.LayoutParams(-1, -1))
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizePty() }
         base.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
