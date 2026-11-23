@@ -108,7 +108,7 @@ class DesktopToolsActivity : Activity() {
 
         section("Productivity", "Lightweight native shortcuts and offline notes.")
         row(button("Notes") { openNotes() }, button("Calendar") { openExternal(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALENDAR)) })
-        row(button("Clock & alarms") { openExternal(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CLOCK)) },
+        row(button("Clock & alarms") { openExternal(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)) },
             button("Web browser") { openExternal(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://example.com"))) })
         row(button("Downloads") {
             openExternal(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("content://downloads/my_downloads")))
