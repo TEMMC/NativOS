@@ -51,21 +51,34 @@ class FloatingTerminalService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onDestroy() {
-        content?.let { view ->
-            try {
-                if (::wm.isInitialized && view.isAttachedToWindow) wm.removeViewImmediate(view)
-            } catch (e: Exception) {
-                android.util.Log.w("MT-GNOME", "Could not detach floating terminal view", e)
-            }
-        }
+    @Synchronized
+    private fun detachOverlay() {
+        val view = content ?: return
+        // Clear the reference first so a rapid reopen cannot reuse a view that is
+        // being removed from the old Activity's window.
         content = null
+        try {
+            if (::wm.isInitialized && view.isAttachedToWindow) wm.removeViewImmediate(view)
+        } catch (e: Exception) {
+            android.util.Log.w("MT-GNOME", "Could not detach floating terminal view", e)
+        }
+    }
+
+    override fun onDestroy() {
+        detachOverlay()
         if (active === this) active = null
         super.onDestroy()
     }
 
     companion object {
         @Volatile private var active: FloatingTerminalService? = null
+
+        @Synchronized
+        fun detachOverlay() {
+            active?.let { service ->
+                service.detachOverlay()
+            }
+        }
 
         fun updatePosition(x: Int, y: Int) {
             active?.let { service ->
