@@ -23,3 +23,19 @@ The release build reads `signing/keystore.properties`, the same file used by the
 ## Window management
 
 MT-GNOME is a launcher, not a replacement for Android's WindowManager. It requests freeform launch mode and enables relevant global settings through Magisk only when the user selects those controls. Samsung's Android 14 framework may ignore or restrict freeform mode. No boot, recovery, partition, SELinux, or system files are modified.
+
+## Included desktop features
+
+- Native Android HOME launcher with searchable installed-app drawer and bundled offline wallpapers.
+- Persistent overlay dock and optional pointer/trackpad overlay (subject to Android overlay and accessibility permissions).
+- Terminal activity backed by the Termux terminal emulator and native PTY bridge.
+- Desktop tools hub with device/RAM/storage/uptime monitoring, battery and charging telemetry, app launching, visible-process inspection, clipboard tools, Android settings shortcuts, SAF file picking, and local offline notes.
+- Productivity shortcuts to installed calendar, clock, browser, downloads, and Android share targets.
+- Four named desktop preference profiles. These are preference profiles, not yet isolated virtual desktops.
+- Optional root bridge for requesting Android freeform app windows; Android/Samsung firmware retains final control over windowing.
+
+## Platform boundaries
+
+MT-GNOME is an Android application, not a custom Android ROM. Wi-Fi, Bluetooth, VPN, notifications, accessibility, screen capture, audio routing, external-display policy, and protected storage remain subject to Android permissions and system services. A shortcut to a system page is not equivalent to an in-app replacement for that service. Process enumeration is limited by Android. Calendar, clock, browser, and download actions depend on installed Android handlers.
+
+The following larger capabilities are not represented as complete merely by listing them: independent multi-window workspaces, a full dual-pane file manager, an in-app notification shade, a full settings framework, remote desktop, SSH/SFTP, cloud sync/accounts, extension marketplace, AI assistant, and full external-display desktop mode. They require dedicated implementations, permission flows, and device testing.
