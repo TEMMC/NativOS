@@ -992,13 +992,16 @@ class TerminalActivity : Activity() {
 
     override fun onDestroy() {
         activityDestroyed = true
+        val ownsFloatingTerminal = hostActivity === this
         FloatingTerminalService.detachOverlay(this)
-        if (hostActivity === this) {
+        if (ownsFloatingTerminal && hostActivity === this) {
             overlayContent = null
             hostActivity = null
+            // An older Activity must never stop the service now owned by a
+            // replacement Activity opened during a rapid close/reopen.
+            stopService(Intent(this, FloatingTerminalService::class.java))
         }
         closeAllSessions()
-        stopService(Intent(this, FloatingTerminalService::class.java))
         super.onDestroy()
     }
 
