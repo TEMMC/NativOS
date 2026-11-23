@@ -68,14 +68,17 @@ class DesktopToolsActivity : Activity() {
         })
         refreshMonitor()
 
-        section("Files", "Use Android's Storage Access Framework to browse shared storage and choose files. Android controls access to protected folders.")
-        row(button("Browse folders") {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+        section("Files", "Browse folders you explicitly grant to MT-GNOME. Create folders, open, rename, delete and share documents through Android's Storage Access Framework.")
+        row(button("Open MT Files") {
+            try { startActivity(Intent(this, FileManagerActivity::class.java)) }
+            catch (_: Exception) { toast("Could not open MT Files") }
+        }, button("Choose a folder") {
+            try { startActivity(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                     Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-            )
-            try { startActivity(intent) } catch (_: Exception) { toast("No document provider is available") }
-        }, button("Open a file") {
+            )) } catch (_: Exception) { toast("No document provider is available") }
+        })
+        row(button("Open a file") {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
