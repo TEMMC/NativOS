@@ -704,7 +704,7 @@ class TerminalActivity : Activity() {
                 if (activeSession === session) {
                     busy = false
                     terminalView.isEnabled = true
-                    terminalView.attachSession(vt)
+                    terminalBridge.attachSession(vt)
                     terminalView.onScreenUpdated()
                     resizePty()
                     focusTerminalInput()
