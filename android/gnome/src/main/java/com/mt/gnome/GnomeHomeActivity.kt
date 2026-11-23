@@ -45,11 +45,13 @@ class GnomeHomeActivity : Activity() {
     private lateinit var rootStatus: TextView
     private var apps: List<ResolveInfo> = emptyList()
     private var wallpaperName = "Aurora"
+    private var activeWorkspace = 1
     private val wallpaperRequest = 4102
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        wallpaperName = prefs.getString("wallpaper", prefs.getString("theme", "Aurora")) ?: "Aurora"
+        activeWorkspace = prefs.getInt("active_workspace", 1).coerceIn(1, 4)
+        wallpaperName = prefs.getString("workspace_${activeWorkspace}_wallpaper", prefs.getString("wallpaper", prefs.getString("theme", "Aurora"))) ?: "Aurora"
         applyOrientationPreference()
         window.statusBarColor = Color.rgb(30, 30, 36)
         window.navigationBarColor = Color.rgb(30, 30, 36)
@@ -142,6 +144,7 @@ class GnomeHomeActivity : Activity() {
         addDockButton(dock, "⌘", "Terminal") { openTerminalWindow() }
         addDockButton(dock, "⚙", "Settings") { showAppearance() }
         addDockButton(dock, "▣", "System") { showQuickSettings() }
+        addDockButton(dock, "▦", "Workspaces") { showWorkspaceSwitcher() }
         addDockButton(dock, "▤", "Tools") {
             RootWindowBridge(this).launchFreeformComponent("com.mt.gnome/.DesktopToolsActivity") {
                 try { startActivity(Intent(this, DesktopToolsActivity::class.java)) }
@@ -172,6 +175,44 @@ class GnomeHomeActivity : Activity() {
         setContentView(desktop)
     }
 
+    /** Four persistent desktop spaces; Android continues to own launched app tasks. */
+    private fun showWorkspaceSwitcher() {
+        val names = (1..4).map { index ->
+            val name = prefs.getString("workspace_${index}_name", "Workspace $index") ?: "Workspace $index"
+            if (index == activeWorkspace) "✓  $name  ·  Active" else name
+        }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Switch desktop workspace").setItems(names) { _, which ->
+            activeWorkspace = which + 1
+            wallpaperName = prefs.getString("workspace_${activeWorkspace}_wallpaper", "Aurora") ?: "Aurora"
+            prefs.edit().putInt("active_workspace", activeWorkspace).apply()
+            buildDesktop()
+            Toast.makeText(this, "Workspace " + activeWorkspace + " selected", Toast.LENGTH_SHORT).show()
+        }.setNeutralButton("Rename") { _, _ -> renameWorkspace() }
+            .setPositiveButton("Wallpaper") { _, _ -> chooseWorkspaceWallpaper() }.show()
+    }
+
+    private fun renameWorkspace() {
+        val choices = (1..4).map { "Workspace " + it }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Rename which workspace?").setItems(choices) { _, which ->
+            val index = which + 1
+            val input = EditText(this).apply { setText(prefs.getString("workspace_${index}_name", "Workspace $index")) }
+            AlertDialog.Builder(this).setTitle("Workspace name").setView(input)
+                .setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ ->
+                    val name = input.text.toString().trim().take(32)
+                    if (name.isNotEmpty()) prefs.edit().putString("workspace_${index}_name", name).apply()
+                }.show()
+        }.show()
+    }
+
+    private fun chooseWorkspaceWallpaper() {
+        val choices = arrayOf("Aurora", "Forest", "Mountain Peaks", "Tropical Beach", "Open Landscape")
+        AlertDialog.Builder(this).setTitle("Workspace " + activeWorkspace + " wallpaper")
+            .setItems(choices) { _, which ->
+                wallpaperName = choices[which]
+                prefs.edit().putString("workspace_${activeWorkspace}_wallpaper", wallpaperName).apply()
+                buildDesktop()
+            }.show()
+    }
     private fun loadApps() {
         val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         apps = packageManager.queryIntentActivities(query, 0)
