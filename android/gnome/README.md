@@ -29,7 +29,7 @@ MT-GNOME is a launcher, not a replacement for Android's WindowManager. It reques
 - Native Android HOME launcher with searchable installed-app drawer and bundled offline wallpapers.
 - Persistent overlay dock and optional pointer/trackpad overlay (subject to Android overlay and accessibility permissions).
 - Terminal activity backed by the Termux terminal emulator and native PTY bridge.
-- Desktop tools hub with device/RAM/storage/uptime monitoring, battery and charging telemetry, app launching, visible-process inspection, clipboard tools, Android settings shortcuts, SAF file picking, and local offline notes.\n- MT Files: a Storage Access Framework file manager for user-granted folders, with directory navigation, file opening, folder creation, rename, delete, and share actions (provider capabilities vary).
+- Desktop tools hub with device/RAM/storage/uptime monitoring, battery and charging telemetry, app launching, visible-process inspection, clipboard tools, Android settings shortcuts, SAF file picking, local offline notes, and a user-triggered shareable diagnostics report.\n- MT Files: a Storage Access Framework file manager for user-granted folders, with directory navigation, file opening, folder creation, rename, delete, and share actions (provider capabilities vary).
 - Productivity shortcuts to installed calendar, clock, browser, downloads, and Android share targets.
 - Four named desktop preference profiles. These are preference profiles, not yet isolated virtual desktops.
 - Optional root bridge for requesting Android freeform app windows; Android/Samsung firmware retains final control over windowing.
