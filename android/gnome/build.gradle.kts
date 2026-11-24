@@ -16,11 +16,11 @@ android {
     ndkVersion = "27.3.13750724"
     defaultConfig {
         applicationId = "com.mt.gnome"
-        minSdk = 26
+        minSdk = 34
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0-alpha"
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild { cmake { cppFlags += "-std=c++17" } }
     }
     signingConfigs {
