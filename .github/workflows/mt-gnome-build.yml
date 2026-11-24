@@ -97,6 +97,23 @@ jobs:
           test -d vendor/magicdesk/x11-runtime
           test -d vendor/magicdesk/hosted-runtime
           echo "Embedded X11 source and Android-native module wiring present."
+      - name: Guard Android host PTY isolation
+        run: |
+          set -euo pipefail
+          TERMINAL=android/gnome/src/main/java/com/mt/gnome/TerminalActivity.kt
+          # The distro must never receive a writable bind mount of Android's /dev.
+          if grep -Fq 'mount --bind /dev ' "$TERMINAL"; then
+            echo "Unsafe host /dev bind mount found."
+            exit 1
+          fi
+          if grep -Fq 'ln -sf /dev/pts/ptmx' "$TERMINAL"; then
+            echo "Unsafe host /dev/ptmx replacement found."
+            exit 1
+          fi
+          grep -Fq 'unshare -m' "$TERMINAL"
+          grep -Fq 'mount --make-rprivate /' "$TERMINAL"
+          grep -Fq 'newinstance,ptmxmode=0666' "$TERMINAL"
+          echo "Terminal mount isolation guard passed."
       - name: Configure Gradle dependency cache
         uses: gradle/actions/setup-gradle@v4
         with:

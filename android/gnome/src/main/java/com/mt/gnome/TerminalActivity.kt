@@ -81,6 +81,7 @@ class TerminalActivity : Activity() {
     private var activeSession: ShellSession? = null
     private var sessionCounter = 0
     private val sessionLock = Any()
+    private val pendingShutdownByDistro = mutableMapOf<String, Int>()
     @Volatile private var activityDestroyed = false
     private lateinit var sessionTabs: LinearLayout
 
@@ -651,8 +652,7 @@ class TerminalActivity : Activity() {
         val rootPath = root(distroId)
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         try {
-            // Keep distro mounts private; never expose Android's /dev as a writable bind mount.
-            val shell = """command -v unshare >/dev/null 2>&1 || { echo 'MT-GNOME: unshare unavailable; refusing unsafe startup.' >&2; exit 126; }; exec unshare -m /system/bin/sh -c 'set -eu; mount --make-rprivate /; R="$1"; test -x "$R/bin/sh" || exit 20; mkdir -p "$R/dev" "$R/proc" "$R/sys" "$R/run"; mount -t tmpfs -o mode=755,nosuid tmpfs "$R/dev"; for spec in "null 1 3" "zero 1 5" "full 1 7" "random 1 8" "urandom 1 9" "tty 5 0"; do set -- $spec; mknod "$R/dev/$1" c "$2" "$3"; chmod 666 "$R/dev/$1"; mount --bind "/dev/$1" "$R/dev/$1"; done; mkdir -p "$R/dev/pts" "$R/dev/shm"; mount -t devpts -o newinstance,ptmxmode=0666,mode=0620 devpts "$R/dev/pts"; ln -s pts/ptmx "$R/dev/ptmx"; mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "$R/dev/shm"; ln -s /proc/self/fd "$R/dev/fd"; ln -s /proc/self/fd/0 "$R/dev/stdin"; ln -s /proc/self/fd/1 "$R/dev/stdout"; ln -s /proc/self/fd/2 "$R/dev/stderr"; mount -t proc proc "$R/proc"; mount -t sysfs sysfs "$R/sys"; exec chroot "$R" /bin/sh -c '\\''export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor; export PS1="root@mt-gnome:~$ "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'\\'' ' _ '$rootPath'"""
+            val shell = """R='$rootPath'; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; mountpoint -q "${'$'}R/dev" || mount --bind /dev "${'$'}R/dev"; mkdir -p "${'$'}R/dev/pts"; mountpoint -q "${'$'}R/dev/pts" || mount -t devpts devpts "${'$'}R/dev/pts"; ln -sf /dev/pts/ptmx "${'$'}R/dev/ptmx"; mountpoint -q "${'$'}R/proc" || mount -t proc proc "${'$'}R/proc"; mountpoint -q "${'$'}R/sys" || mount -t sysfs sysfs "${'$'}R/sys"; chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor; export PS1="root@mt-gnome:~\${'$'} "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'"""
             // Start from Android's guaranteed system shell, then let its PATH resolve
             // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
             // expose su from /system/xbin or another PATH directory.
@@ -882,7 +882,10 @@ class TerminalActivity : Activity() {
             vt = session.vtSession
             session.vtSession = null
             sessions.remove(session)
-            if (activeSession === session) activeSession = sessions.lastOrNull()        }
+            if (activeSession === session) activeSession = sessions.lastOrNull()
+            if (vt != null) pendingShutdownByDistro[session.distroId] =
+                (pendingShutdownByDistro[session.distroId] ?: 0) + 1
+        }
         terminalBridge.detachSession(vt)
         if (vt == null) {
             session.exited = true
@@ -895,14 +898,35 @@ class TerminalActivity : Activity() {
                 android.util.Log.w("MT-GNOME", "Could not stop terminal session " + session.number, e)
             } finally {
                 session.exited = true
-}
+                synchronized(sessionLock) {
+                    val remaining = (pendingShutdownByDistro[session.distroId] ?: 1) - 1
+                    if (remaining <= 0) pendingShutdownByDistro.remove(session.distroId)
+                    else pendingShutdownByDistro[session.distroId] = remaining
+                }
+                cleanupDistroMountsIfIdle(session.distroId)
+            }
         }, "MT-Terminal-close-${session.number}").apply { isDaemon = true }.start()
+    }
+
+    private fun cleanupDistroMountsIfIdle(distroId: String) {
+        val safeToUnmount = synchronized(sessionLock) {
+            (pendingShutdownByDistro[distroId] ?: 0) == 0 &&
+                sessions.none { it.distroId == distroId && !it.closing && !it.exited }
+        }
+        if (!safeToUnmount) return
+        try {
+            val r = rootExec("R='${root(distroId)}'; mountpoint -q \"\$R/dev/pts\" && umount \"\$R/dev/pts\" || true; mountpoint -q \"\$R/dev\" && umount \"\$R/dev\" || true; mountpoint -q \"\$R/proc\" && umount \"\$R/proc\" || true; mountpoint -q \"\$R/sys\" && umount \"\$R/sys\" || true")
+            if (r.first != 0) android.util.Log.w("MT-GNOME", "Distro mount cleanup returned ${r.first}: ${r.second}")
+        } catch (e: Exception) {
+            android.util.Log.w("MT-GNOME", "Distro mount cleanup failed", e)
+        }
     }
 
     internal fun onVtSessionFinished(finished: TerminalSession) {
         val session = synchronized(sessionLock) { sessions.firstOrNull { it.vtSession === finished } } ?: return
         session.starting = false
         session.exited = true
+        Thread({ cleanupDistroMountsIfIdle(session.distroId) }, "MT-Terminal-mount-cleanup").apply { isDaemon = true; start() }
         if (!activityDestroyed) runOnUiThread {
             if (activityDestroyed || isFinishing || isDestroyed) return@runOnUiThread
             if (activeSession === session) {
@@ -922,7 +946,10 @@ class TerminalActivity : Activity() {
             snapshot.forEach { it.closing = true; it.starting = false }
             snapshot.mapNotNull { session ->
                 val vt = session.vtSession
-                session.vtSession = null                if (vt == null) session.exited = true
+                session.vtSession = null
+                if (vt != null) pendingShutdownByDistro[session.distroId] =
+                    (pendingShutdownByDistro[session.distroId] ?: 0) + 1
+                if (vt == null) session.exited = true
                 vt?.let { session to it }
             }
         }
@@ -936,8 +963,14 @@ class TerminalActivity : Activity() {
                     android.util.Log.w("MT-GNOME", "Could not stop terminal session " + session.number, e)
                 } finally {
                     session.exited = true
+                    synchronized(sessionLock) {
+                        val remaining = (pendingShutdownByDistro[session.distroId] ?: 1) - 1
+                        if (remaining <= 0) pendingShutdownByDistro.remove(session.distroId)
+                        else pendingShutdownByDistro[session.distroId] = remaining
+                    }
                 }
             }
+            closing.map { it.first.distroId }.distinct().forEach { cleanupDistroMountsIfIdle(it) }
         }, "MT-Terminal-close-all").apply { isDaemon = true }.start()
     }
 
