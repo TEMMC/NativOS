@@ -66,6 +66,7 @@ class TerminalActivity : Activity() {
     private var windowWidth = 0
     private var windowHeight = 0
     private var maximized = false
+    @Volatile private var closingWindow = false
     private var restoreBounds = intArrayOf(0, 0, 0, 0)
     private val commandHistory = mutableListOf<String>()
     private var historyIndex = 0
@@ -184,7 +185,7 @@ class TerminalActivity : Activity() {
         titleBar.addView(title, LinearLayout.LayoutParams(0, dp(42), 1f))
         titleBar.addView(btn("—") { moveTaskToBack(true) })
         titleBar.addView(btn("□") { toggleMaximize() })
-        titleBar.addView(btn("×") { finish() })
+        titleBar.addView(btn("×") { closeTerminalWindow() })
         val menuButton = btn("⋮") {}
         menuButton.setOnClickListener { showTerminalMenu(menuButton) }
         titleBar.addView(menuButton)
@@ -285,14 +286,16 @@ class TerminalActivity : Activity() {
     private var gestureWindowHeight = 0
 
     private fun applyWindowBounds() {
-        window.setGravity(Gravity.TOP or Gravity.START)
-        window.setLayout(windowWidth, windowHeight)
-        window.attributes = window.attributes.apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = windowX
-            y = windowY
-            dimAmount = 0.28f
-        }
+        // The terminal is a TYPE_APPLICATION_OVERLAY window, not the Activity
+        // window. Update the WindowManager.LayoutParams that own the visible view.
+        FloatingTerminalService.updateBounds(windowX, windowY, windowWidth, windowHeight)
+    }
+
+    private fun closeTerminalWindow() {
+        if (closingWindow) return
+        closingWindow = true
+        FloatingTerminalService.closeOverlay(this)
+        finish()
     }
 
     private fun dragStart(rawX: Float, rawY: Float) {
@@ -306,7 +309,6 @@ class TerminalActivity : Activity() {
         val metrics = resources.displayMetrics
         windowX = (gestureWindowX + rawX - gestureStartX).toInt().coerceIn(0, (metrics.widthPixels - windowWidth).coerceAtLeast(0))
         windowY = (gestureWindowY + rawY - gestureStartY).toInt().coerceIn(0, (metrics.heightPixels - windowHeight).coerceAtLeast(0))
-        FloatingTerminalService.updatePosition(windowX, windowY)
         applyWindowBounds()
     }
 
@@ -321,7 +323,6 @@ class TerminalActivity : Activity() {
         val metrics = resources.displayMetrics
         windowWidth = (gestureWindowWidth + rawX - gestureStartX).toInt().coerceIn(dp(280), (metrics.widthPixels - windowX).coerceAtLeast(dp(280)))
         windowHeight = (gestureWindowHeight + rawY - gestureStartY).toInt().coerceIn(dp(240), (metrics.heightPixels - windowY).coerceAtLeast(dp(240)))
-        FloatingTerminalService.updateSize(windowWidth, windowHeight)
         applyWindowBounds()
     }
 
@@ -371,7 +372,7 @@ class TerminalActivity : Activity() {
         item("Choose distribution") { showCatalogue() }
         item("Clear terminal") { clearActiveTerminal() }
         item("Terminal help") { append("\nCommands: help, clear, exit. Install tools with apk, apt, dnf, pacman, etc.\n") }
-        item("Close terminal") { finish() }
+        item("Close terminal") { closeTerminalWindow() }
         popup.showAsDropDown(anchor, 0, 0, Gravity.END)
     }
 
