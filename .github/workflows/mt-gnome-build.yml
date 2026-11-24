@@ -4,8 +4,12 @@ on:
   push:
     branches: [ main ]
     paths:
+      - ".gitmodules"
+      - "vendor/magicdesk"
       - ".github/workflows/mt-gnome-build.yml"
       - "android/settings.gradle.kts"
+      - "android/build.gradle.kts"
+      - "android/gradle/**"
       - "android/gnome/**"
       - "README.md"
   workflow_dispatch:
@@ -20,11 +24,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       SIGNING_ENABLED: ${{ secrets.MTOS_KEYSTORE_BASE64 != '' && secrets.MTOS_KEYSTORE_PASSWORD != '' && secrets.MTOS_KEY_ALIAS != '' && secrets.MTOS_KEY_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -32,11 +38,20 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - name: Install Android SDK packages
+      - name: Install Android and native build dependencies
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y bison flex ninja-build python3 patch pkg-config
           sdkmanager --licenses </dev/null
-          sdkmanager "platform-tools" "ndk;27.2.12479018" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools" "ndk;27.3.13750724" "cmake;3.22.1" "platforms;android-37" "build-tools;37.0.0"
+      - name: Verify pinned MagicDesk sources
+        run: |
+          set -euo pipefail
+          test -f vendor/magicdesk/x11-runtime/build.gradle
+          test -f vendor/magicdesk/hosted-runtime/build.gradle
+          test -f vendor/magicdesk/vendor/magicdesk-x11/lorie/src/main/cpp/CMakeLists.txt
+          grep -q "GNU GENERAL PUBLIC LICENSE" vendor/magicdesk/vendor/magicdesk-x11/LICENSE
       - name: Download five real nature wallpapers
         run: |
           set -euo pipefail
@@ -72,59 +87,34 @@ jobs:
           keyPassword=$MTOS_KEY_PASSWORD
           EOF
           chmod 600 signing/keystore.properties
-      - name: Enforce Android-native MT-GNOME dependencies
+      - name: Enforce MT-GNOME platform boundaries
         run: |
           set -euo pipefail
           if grep -nEi '(^|[[:space:]])(implementation|api|runtimeOnly|compileOnly|testImplementation)[(].*(phosh|phoc)|MT-Phosh|MT-Phoc' android/gnome/build.gradle.kts; then
             echo "MT-GNOME must not declare MT-Phosh or MT-Phoc dependencies."
             exit 1
           fi
-          echo "MT-GNOME package check passed."
-
+          test -d vendor/magicdesk/x11-runtime
+          test -d vendor/magicdesk/hosted-runtime
+          echo "Embedded X11 source and Android-native module wiring present."
       - name: Configure Gradle dependency cache
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
       - name: Build debug APK
         working-directory: android
-        run: |
-          chmod +x ./gradlew
-          set +e
-          for attempt in 1 2 3; do
-            echo "Debug build attempt $attempt/3"
-            if ./gradlew --no-daemon --stacktrace :gnome:assembleDebug; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Gradle dependency/build attempt failed; retrying after a short pause"
-              sleep 15
-              ./gradlew --stop || true
-            fi
-          done
-          exit 1
+        run: ./gradlew --no-daemon --stacktrace :gnome:assembleDebug
       - name: Build release APK with the same NativOS signing certificate
         if: env.SIGNING_ENABLED == 'true'
         working-directory: android
-        run: |
-          set +e
-          for attempt in 1 2 3; do
-            echo "Release build attempt $attempt/3"
-            if ./gradlew --no-daemon --stacktrace :gnome:assembleRelease; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              sleep 15
-              ./gradlew --stop || true
-            fi
-          done
-          exit 1
+        run: ./gradlew --no-daemon --stacktrace :gnome:assembleRelease
       - name: Verify release signature
         if: env.SIGNING_ENABLED == 'true'
         working-directory: android
         run: |
           APK=gnome/build/outputs/apk/release/gnome-release.apk
           test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$APK"
           sha256sum "$APK"
       - uses: actions/upload-artifact@v4
         with:
