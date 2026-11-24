@@ -1,0 +1,3 @@
+[submodule "vendor/magicdesk"]
+	path = vendor/magicdesk
+	url = https://github.com/mekhontsev/magicdesk.git
