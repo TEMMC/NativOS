@@ -81,7 +81,6 @@ class TerminalActivity : Activity() {
     private var activeSession: ShellSession? = null
     private var sessionCounter = 0
     private val sessionLock = Any()
-    private val pendingShutdownByDistro = mutableMapOf<String, Int>()
     @Volatile private var activityDestroyed = false
     private lateinit var sessionTabs: LinearLayout
 
@@ -937,11 +936,6 @@ class TerminalActivity : Activity() {
                     android.util.Log.w("MT-GNOME", "Could not stop terminal session " + session.number, e)
                 } finally {
                     session.exited = true
-                    synchronized(sessionLock) {
-                        val remaining = (pendingShutdownByDistro[session.distroId] ?: 1) - 1
-                        if (remaining <= 0) pendingShutdownByDistro.remove(session.distroId)
-                        else pendingShutdownByDistro[session.distroId] = remaining
-                    }
                 }
             }
         }, "MT-Terminal-close-all").apply { isDaemon = true }.start()
