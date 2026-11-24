@@ -12,8 +12,8 @@ val signingProps = Properties().apply {
 
 android {
     namespace = "com.mt.gnome"
-    compileSdk = 35
-    ndkVersion = "27.2.12479018"
+    compileSdk = 37
+    ndkVersion = "27.3.13750724"
     defaultConfig {
         applicationId = "com.mt.gnome"
         minSdk = 26
@@ -49,6 +49,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":x11-runtime"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("com.termux.termux-app:terminal-view:0.118.0")
     implementation("org.tukaani:xz:1.10")
