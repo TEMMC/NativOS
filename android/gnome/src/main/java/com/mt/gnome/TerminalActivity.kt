@@ -183,7 +183,7 @@ class TerminalActivity : Activity() {
             }
         }
         titleBar.addView(title, LinearLayout.LayoutParams(0, dp(42), 1f))
-        titleBar.addView(btn("—") { moveTaskToBack(true) })
+        titleBar.addView(btn("—") { FloatingTerminalService.minimizeOverlay(this) })
         titleBar.addView(btn("□") { toggleMaximize() })
         titleBar.addView(btn("×") { closeTerminalWindow() })
         val menuButton = btn("⋮") {}
