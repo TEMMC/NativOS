@@ -73,11 +73,13 @@ class FloatingTerminalService : Service() {
 
     @Synchronized
     private fun attachCurrentOverlay() {
-        if (!::wm.isInitialized || content?.isAttachedToWindow == true) return
+        if (!::wm.isInitialized) return
         val currentOwner = TerminalActivity.hostActivity ?: return
-        val view = TerminalActivity.overlayContent ?: return
-        // Do not let an old service instance attach a view from a newer Activity.
+        // Check ownership before the attached-view fast path. Otherwise a stale
+        // service can keep an old Activity's attached view after a rapid reopen.
         if (owner != null && owner !== currentOwner) detachOverlay()
+        if (owner === currentOwner && content?.isAttachedToWindow == true) return
+        val view = TerminalActivity.overlayContent ?: return
         owner = currentOwner
         try {
             (view.parent as? android.view.ViewGroup)?.removeView(view)
