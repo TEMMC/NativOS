@@ -16,4 +16,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "NativOS"
-include(":app", ":gnome")
+include(":app", ":gnome", ":hosted-runtime", ":x11-runtime")
+project(":hosted-runtime").projectDir = file("../vendor/magicdesk/hosted-runtime")
+project(":x11-runtime").projectDir = file("../vendor/magicdesk/x11-runtime")
