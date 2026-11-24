@@ -8,18 +8,23 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
+import android.widget.TextView
 
 class FloatingTerminalService : Service() {
     private lateinit var wm: WindowManager
     private var content: View? = null
     private var owner: TerminalActivity? = null
     private lateinit var params: WindowManager.LayoutParams
+    private var bubble: View? = null
+    private var minimized = false
 
 
     private fun startTerminalForeground() {
@@ -57,6 +62,10 @@ class FloatingTerminalService : Service() {
 
     @Synchronized
     private fun detachOverlay() {
+        val mini = bubble
+        bubble = null
+        if (mini != null) try { if (::wm.isInitialized && mini.isAttachedToWindow) wm.removeView(mini) } catch (_: Exception) { }
+        minimized = false
         val view = content
         content = null
         if (view != null) {
@@ -78,7 +87,7 @@ class FloatingTerminalService : Service() {
         // Check ownership before the attached-view fast path. Otherwise a stale
         // service can keep an old Activity's attached view after a rapid reopen.
         if (owner != null && owner !== currentOwner) detachOverlay()
-        if (owner === currentOwner && content?.isAttachedToWindow == true) return
+        if (owner === currentOwner && (content?.isAttachedToWindow == true || bubble?.isAttachedToWindow == true)) return
         val view = TerminalActivity.overlayContent ?: return
         owner = currentOwner
         try {
@@ -98,11 +107,50 @@ class FloatingTerminalService : Service() {
             }
             wm.addView(view, params)
             content = view
+            minimized = false
         } catch (e: Exception) {
             content = null
             android.util.Log.e("MT-GNOME", "Could not attach floating terminal overlay", e)
             stopSelf()
         }
+    }
+
+
+    @Synchronized
+    private fun minimizeWindow() {
+        val view = content ?: return
+        if (!view.isAttachedToWindow || minimized) return
+        try {
+            wm.removeView(view)
+            val size = (56 * resources.displayMetrics.density).toInt()
+            val chip = TextView(this).apply {
+                text = "MT"; textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(48, 83, 125)); setStroke((2 * resources.displayMetrics.density).toInt(), Color.WHITE) }
+                elevation = 12f
+                contentDescription = "Restore MT Terminal"
+                setOnClickListener { restoreWindow() }
+            }
+            val miniParams = WindowManager.LayoutParams(size, size, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT).apply {
+                gravity = Gravity.TOP or Gravity.END; x = (12 * resources.displayMetrics.density).toInt(); y = resources.displayMetrics.heightPixels / 3
+            }
+            wm.addView(chip, miniParams); bubble = chip; minimized = true
+        } catch (e: Exception) {
+            android.util.Log.e("MT-GNOME", "Could not minimize terminal overlay", e)
+            try { if (!view.isAttachedToWindow) wm.addView(view, params) } catch (_: Exception) { }
+        }
+    }
+
+    @Synchronized
+    private fun restoreWindow() {
+        val view = content ?: return
+        try { bubble?.let { if (it.isAttachedToWindow) wm.removeView(it) }; bubble = null; if (!view.isAttachedToWindow) wm.addView(view, params); minimized = false }
+        catch (e: Exception) { android.util.Log.e("MT-GNOME", "Could not restore terminal overlay", e) }
+    }
+
+    private fun closeWindow(requester: TerminalActivity) {
+        if (owner !== requester) return
+        detachOverlay(); owner = null; stopSelf()
+        requester.runOnUiThread { if (!requester.isFinishing) requester.finish() }
     }
 
     override fun onDestroy() {
@@ -121,6 +169,10 @@ class FloatingTerminalService : Service() {
                 if (service.owner === owner) service.detachOverlay()
             }
         }
+
+
+        @Synchronized
+        fun minimizeOverlay(owner: TerminalActivity) { active?.let { if (it.owner === owner) it.minimizeWindow() } }
 
         @Synchronized
         fun updateBounds(x: Int, y: Int, width: Int, height: Int) {
@@ -144,11 +196,9 @@ class FloatingTerminalService : Service() {
 
         @Synchronized
         fun closeOverlay(owner: TerminalActivity) {
-            val service = active ?: return
-            if (service.owner !== owner) return
-            service.detachOverlay()
-            service.owner = null
-            service.stopSelf()
+            val service = active
+            if (service != null && service.owner === owner) service.closeWindow(owner)
+            else if (!owner.isFinishing) owner.finish()
         }
     }
 
