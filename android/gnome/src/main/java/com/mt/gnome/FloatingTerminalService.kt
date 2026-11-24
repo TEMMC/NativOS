@@ -61,7 +61,7 @@ class FloatingTerminalService : Service() {
         content = null
         if (view != null) {
             try {
-                if (::wm.isInitialized && view.isAttachedToWindow) wm.removeViewImmediate(view)
+                if (::wm.isInitialized && view.isAttachedToWindow) wm.removeView(view)
             } catch (e: Exception) {
                 android.util.Log.w("MT-GNOME", "Could not detach floating terminal view", e)
             }
@@ -120,24 +120,33 @@ class FloatingTerminalService : Service() {
             }
         }
 
-        fun updatePosition(x: Int, y: Int) {
+        @Synchronized
+        fun updateBounds(x: Int, y: Int, width: Int, height: Int) {
             active?.let { service ->
-                service.content?.let { try {
-                    service.params.x = x
-                    service.params.y = y
-                    service.wm.updateViewLayout(it, service.params)
-                } catch (_: Exception) {} }
+                val view = service.content ?: return
+                if (!view.isAttachedToWindow) return
+                try {
+                    val metrics = service.resources.displayMetrics
+                    val minWidth = (280 * metrics.density).toInt()
+                    val minHeight = (240 * metrics.density).toInt()
+                    service.params.width = width.coerceIn(minWidth, metrics.widthPixels.coerceAtLeast(minWidth))
+                    service.params.height = height.coerceIn(minHeight, metrics.heightPixels.coerceAtLeast(minHeight))
+                    service.params.x = x.coerceIn(0, (metrics.widthPixels - service.params.width).coerceAtLeast(0))
+                    service.params.y = y.coerceIn(0, (metrics.heightPixels - service.params.height).coerceAtLeast(0))
+                    service.wm.updateViewLayout(view, service.params)
+                } catch (e: Exception) {
+                    android.util.Log.e("MT-GNOME", "Could not update floating terminal bounds", e)
+                }
             }
         }
 
-        fun updateSize(width: Int, height: Int) {
-            active?.let { service ->
-                service.content?.let { try {
-                    service.params.width = width
-                    service.params.height = height
-                    service.wm.updateViewLayout(it, service.params)
-                } catch (_: Exception) {} }
-            }
+        @Synchronized
+        fun closeOverlay(owner: TerminalActivity) {
+            val service = active ?: return
+            if (service.owner !== owner) return
+            service.detachOverlay()
+            service.owner = null
+            service.stopSelf()
         }
     }
 
