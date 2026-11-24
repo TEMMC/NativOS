@@ -44,9 +44,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bison flex ninja-build python3 patch pkg-config
           sdkmanager --licenses </dev/null
-          sdkmanager "platform-tools" "ndk;27.3.13750724" "cmake;3.22.1"
-          # Android API 37 is a preview package and is published on the preview channel.
-          sdkmanager --channel=3 "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager "platform-tools" "ndk;27.3.13750724" "cmake;3.22.1" "platforms;android-36" "build-tools;36.0.0"
       - name: Verify pinned MagicDesk sources
         run: |
           set -euo pipefail
@@ -116,7 +114,7 @@ jobs:
         run: |
           APK=gnome/build/outputs/apk/release/gnome-release.apk
           test -s "$APK"
-          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
           sha256sum "$APK"
       - uses: actions/upload-artifact@v4
         with:
