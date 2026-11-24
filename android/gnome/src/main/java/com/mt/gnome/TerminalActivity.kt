@@ -338,8 +338,6 @@ class TerminalActivity : Activity() {
             windowWidth = restoreBounds[2]; windowHeight = restoreBounds[3]
             maximized = false
         }
-        FloatingTerminalService.updatePosition(windowX, windowY)
-        FloatingTerminalService.updateSize(windowWidth, windowHeight)
         applyWindowBounds()
         resizePty()
     }
