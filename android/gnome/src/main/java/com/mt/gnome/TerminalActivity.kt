@@ -646,6 +646,7 @@ class TerminalActivity : Activity() {
         val session = ShellSession(++sessionCounter, distroId)
         session.buffer.append("MT Terminal • ${name(distroId)}\n")
         sessions.add(session); activeSession = session
+        terminalView.visibility = View.VISIBLE
         renderSessionTabs(); output.text = session.buffer.toString()
         busy = true; terminalView.isEnabled = false
         val rootPath = root(distroId)
@@ -805,12 +806,17 @@ class TerminalActivity : Activity() {
 
     private fun showActiveSession() {
         val session = activeSession
-        output.text = if (session == null) "No terminal session. Tap + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
+        val vt = session?.vtSession
+        val alive = try { vt != null && vt.isRunning && !session.closing && !session.exited } catch (_: Exception) { false }
+        output.text = if (session == null) "No terminal session. Tap New + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
         busy = session?.starting ?: false
-        terminalView.isEnabled = !busy && (session?.vtSession?.let { try { it.isRunning } catch (_: Exception) { false } } == true)
-        if (session?.vtSession != null) {
-            terminalBridge.attachSession(session.vtSession!!)
+        terminalView.visibility = if (alive || session?.starting == true) View.VISIBLE else View.GONE
+        terminalView.isEnabled = !busy && alive
+        if (alive && vt != null) {
+            terminalBridge.attachSession(vt)
             terminalView.onScreenUpdated()
+        } else {
+            terminalBridge.detachSession(null)
         }
         scroll.post { resizePty() }
     }
@@ -903,15 +909,26 @@ class TerminalActivity : Activity() {
     }
 
     internal fun onVtSessionFinished(finished: TerminalSession) {
-        val session = synchronized(sessionLock) { sessions.firstOrNull { it.vtSession === finished } } ?: return
-        session.starting = false
-        session.exited = true
-        if (!activityDestroyed) runOnUiThread {
-            if (activityDestroyed || isFinishing || isDestroyed) return@runOnUiThread
-            if (activeSession === session) {
+        val session = synchronized(sessionLock) {
+            sessions.firstOrNull { it.vtSession === finished }
+        } ?: return
+        if (activityDestroyed) return
+        runOnUiThread {
+            if (activityDestroyed || isFinishing || isDestroyed || session.closing) return@runOnUiThread
+            synchronized(sessionLock) {
+                session.starting = false
+                session.exited = true
+                session.closing = true
+                sessions.remove(session)
+                if (activeSession === session) activeSession = sessions.lastOrNull()
+            }
+            terminalBridge.detachSession(finished)
+            showActiveSession()
+            if (activeSession == null) {
                 busy = false
                 terminalView.isEnabled = false
-                output.text = "Shell exited • ${name(session.distroId)}"
+                terminalView.visibility = View.GONE
+                output.text = "Shell exited • ${name(session.distroId)}. Tap New + to restart."
             }
             renderSessionTabs()
         }
