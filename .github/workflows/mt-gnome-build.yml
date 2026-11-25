@@ -2,7 +2,7 @@ name: MT-GNOME Android launcher
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fix/mt-gnome-pty-isolation ]
     paths:
       - ".gitmodules"
       - "vendor/magicdesk"
