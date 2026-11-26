@@ -55,3 +55,8 @@ MT-GNOME is kept separate from the legacy MT-OS Linux desktop module. The MT-GNO
 4. Render typed commands and output inside the terminal, with the prompt at the bottom and input immediately after the `$` prompt.
 5. Fix PTY allocation and session lifecycle before claiming full interactive-terminal support.
 6. Verify every change with the dedicated MT-GNOME GitHub Actions build before sharing an APK.
+
+
+## MT-GNOME advanced desktop customization
+
+The MT-GNOME launcher includes persistent desktop preferences for built-in and custom wallpapers, 12 desktop themes, custom accent colours, independent top-panel and dock transparency, desktop icon sizing and label visibility, configurable application-grid density (3–8 columns), dock visibility and width, pointer/trackpad input, orientation, and four named desktop workspaces. Preferences are stored locally on the device. Android continues to manage app tasks and system permissions; freeform behaviour depends on firmware support and user-approved root access. Linux desktop-entry discovery does not by itself guarantee that an app window can be displayed: a compatible running X11 or Wayland session and graphics/input integration are required.
