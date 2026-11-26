@@ -858,7 +858,7 @@ class GnomeHomeActivity : Activity() {
             item("Android app permissions","Review permissions in Android settings") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName"))) }
             item("System settings","Open Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }
-        navItem("About") { page("About MT-GNOME","MT-OS desktop shell"); item("Version","0.1.0-alpha") {}; item("Developer","Tinotenda Enock Mapfumo") {}; item("Device","${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}") {} }
+        navItem("About") { page("About MT-GNOME","MT-OS desktop shell"); item("Version","0.4.0-alpha") {}; item("Developer","Tinotenda Enock Mapfumo") {}; item("Device","${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}") {} }
         page("Appearance","Wallpaper and desktop presentation")
         footer = Button(this).apply { text="Close settings"; isAllCaps=false; setOnClickListener { dialog.dismiss() } }
         root.addView(footer,LinearLayout.LayoutParams(-1,dp(42)).apply { topMargin=dp(10) })
