@@ -2,7 +2,7 @@ name: MT-GNOME Android launcher
 
 on:
   push:
-    branches: [ main, fix/mt-gnome-pty-isolation ]
+    branches: [ main, fix/mt-gnome-pty-isolation, feature/mt-gnome-x11-wayland ]
     paths:
       - ".gitmodules"
       - "vendor/magicdesk"
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       SIGNING_ENABLED: ${{ secrets.MTOS_KEYSTORE_BASE64 != '' && secrets.MTOS_KEYSTORE_PASSWORD != '' && secrets.MTOS_KEY_ALIAS != '' && secrets.MTOS_KEY_PASSWORD != '' }}
     steps:
@@ -42,16 +42,27 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y bison flex ninja-build python3 patch pkg-config
+          sudo apt-get install -y bison flex ninja-build python3 python3-venv python3-pip patch pkg-config cmake libexpat1-dev libffi-dev libxml2-dev
           sdkmanager --licenses </dev/null
-          sdkmanager "platform-tools" "ndk;27.3.13750724" "cmake;3.22.1" "platforms;android-36" "build-tools;36.0.0"
-      - name: Verify pinned MagicDesk sources
+          sdkmanager "platform-tools" "ndk;27.3.13750724" "cmake;3.22.1" "platforms;android-36" "platforms;android-37" "build-tools;36.0.0"
+      - name: Install pinned Meson for the Wayland compositor build
+        working-directory: android
+        run: |
+          set -euo pipefail
+          python3 -m venv build/wayland-tools
+          build/wayland-tools/bin/pip install --disable-pip-version-check meson==1.9.1
+          build/wayland-tools/bin/meson --version
+      - name: Verify pinned MagicDesk X11 and Wayland sources
         run: |
           set -euo pipefail
           test -f vendor/magicdesk/x11-runtime/build.gradle
           test -f vendor/magicdesk/hosted-runtime/build.gradle
+          test -f vendor/magicdesk/wayland-runtime/build.gradle
+          test -f vendor/magicdesk/docs/wayland.md
           test -f vendor/magicdesk/vendor/magicdesk-x11/lorie/src/main/cpp/CMakeLists.txt
           grep -q "GNU GENERAL PUBLIC LICENSE" vendor/magicdesk/vendor/magicdesk-x11/LICENSE
+          grep -q "wayland-runtime" android/settings.gradle.kts
+          grep -q 'implementation(project(":wayland-runtime"))' android/gnome/build.gradle.kts
       - name: Download five real nature wallpapers
         run: |
           set -euo pipefail
@@ -87,7 +98,7 @@ jobs:
           keyPassword=$MTOS_KEY_PASSWORD
           EOF
           chmod 600 signing/keystore.properties
-      - name: Enforce MT-GNOME platform boundaries
+      - name: Enforce MT-GNOME platform boundaries and dual graphics wiring
         run: |
           set -euo pipefail
           if grep -nEi '(^|[[:space:]])(implementation|api|runtimeOnly|compileOnly|testImplementation)[(].*(phosh|phoc)|MT-Phosh|MT-Phoc' android/gnome/build.gradle.kts; then
@@ -96,7 +107,11 @@ jobs:
           fi
           test -d vendor/magicdesk/x11-runtime
           test -d vendor/magicdesk/hosted-runtime
-          echo "Embedded X11 source and Android-native module wiring present."
+          test -d vendor/magicdesk/wayland-runtime
+          test -d vendor/magicdesk/wayland-runtime/src/main/java
+          grep -q 'implementation(project(":x11-runtime"))' android/gnome/build.gradle.kts
+          grep -q 'implementation(project(":wayland-runtime"))' android/gnome/build.gradle.kts
+          echo "Both embedded graphics runtimes and shared hosted renderer are wired into MT-GNOME."
       - name: Guard Android host PTY isolation
         run: |
           set -euo pipefail
@@ -111,7 +126,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
-      - name: Build debug APK
+      - name: Build X11 and Wayland runtime tests
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon --stacktrace \
+            :x11-runtime:testDebugUnitTest \
+            :wayland-runtime:testDebugUnitTest \
+            :wayland-runtime:lintDebug
+      - name: Build MT-GNOME debug APK with both graphics runtimes
         working-directory: android
         run: ./gradlew --no-daemon --stacktrace :gnome:assembleDebug
       - name: Build release APK with the same NativOS signing certificate
@@ -128,7 +150,7 @@ jobs:
           sha256sum "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: MT-GNOME-debug
+          name: MT-GNOME-dual-graphics-debug
           path: android/gnome/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
@@ -136,7 +158,7 @@ jobs:
         if: env.SIGNING_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MT-GNOME-signed-release
+          name: MT-GNOME-dual-graphics-signed-release
           path: android/gnome/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 90
