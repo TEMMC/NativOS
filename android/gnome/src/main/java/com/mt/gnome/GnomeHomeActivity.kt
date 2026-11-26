@@ -47,6 +47,10 @@ class GnomeHomeActivity : Activity() {
     private var wallpaperName = "Aurora"
     private var activeWorkspace = 1
     private val wallpaperRequest = 4102
+    private data class LinuxDesktopApp(val distro: String, val name: String, val desktopId: String, val exec: String)
+    private var linuxApps: List<LinuxDesktopApp> = emptyList()
+    private var linuxScanRunning = false
+    private val distroIds = listOf("alpine", "debian", "ubuntu", "arch", "fedora", "void", "kali", "nixos", "gentoo", "opensuse", "rocky", "openwrt")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +62,7 @@ class GnomeHomeActivity : Activity() {
         enterDesktopMode()
         buildDesktop()
         loadApps()
+        refreshLinuxApps()
         updateRootStatus()
         showFirstRunSetupIfNeeded()
         if (intent.getBooleanExtra("open_settings", false)) desktop.post { showAppearance() }
@@ -69,6 +74,7 @@ class GnomeHomeActivity : Activity() {
         renderApps()
         updateResolution()
         updateRootStatus()
+        refreshLinuxApps()
     }
 
     override fun onResume() {
@@ -131,51 +137,235 @@ class GnomeHomeActivity : Activity() {
 
     private fun buildDesktop() {
         desktop = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             background = wallpaperBackground()
         }
-        val dock = LinearLayout(this).apply {
+
+        // Desktop top panel: app menu, workspace, quick controls and live clock.
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(Color.argb(205, 18, 23, 34), 14)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+        }
+        val menu = Button(this).apply {
+            text = "MT  ▾"; isAllCaps = false; textSize = 12f
+            setTextColor(Color.WHITE); background = rounded(themeColors()[2], 10)
+            setOnClickListener { showDesktopMenu(this) }
+        }
+        top.addView(menu, LinearLayout.LayoutParams(-2, dp(38)))
+        top.addView(label(prefs.getString("desktop_profile_name", "Desktop") ?: "Desktop", 12, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, -1, 1f))
+        val workspace = Button(this).apply {
+            text = "Workspace $activeWorkspace"; isAllCaps = false; textSize = 10f
+            setTextColor(Color.WHITE); background = rounded(Color.TRANSPARENT, 8)
+            setOnClickListener { showWorkspaceSwitcher() }
+        }
+        top.addView(workspace)
+        val clockView = label(now(), 11, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; setPadding(dp(8), 0, dp(8), 0)
+        }
+        clock = clockView
+        top.addView(clockView)
+        val quick = Button(this).apply {
+            text = "⚙"; isAllCaps = false; textSize = 16f
+            setTextColor(Color.WHITE); background = rounded(Color.TRANSPARENT, 8)
+            setOnClickListener { showAppearance() }
+        }
+        top.addView(quick, LinearLayout.LayoutParams(dp(42), dp(38)))
+        desktop.addView(top, LinearLayout.LayoutParams(-1, dp(44)))
+
+        // Desktop surface: both Android launchers and installed Linux .desktop entries.
+        val surface = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            background = rounded(themeColors()[0], 20)
-            setPadding(dp(6), dp(10), dp(6), dp(10))
+            setPadding(dp(8), dp(10), dp(8), dp(8))
         }
-        addDockButton(dock, "⌘", "Terminal") { openTerminalWindow() }
-        addDockButton(dock, "⚙", "Settings") { showAppearance() }
-        addDockButton(dock, "▣", "System") { showQuickSettings() }
-        addDockButton(dock, "▦", "Workspaces") { showWorkspaceSwitcher() }
-        addDockButton(dock, "▤", "Tools") {
-            RootWindowBridge(this).launchFreeformComponent("com.mt.gnome/.DesktopToolsActivity") {
-                try { startActivity(Intent(this, DesktopToolsActivity::class.java)) }
-                catch (_: Exception) { toast("Could not open desktop tools") }
-            }
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
-        dock.addView(View(this).apply { setBackgroundColor(Color.argb(80,255,255,255)) },
-            LinearLayout.LayoutParams(dp(38), dp(1)).apply { topMargin=dp(4); bottomMargin=dp(7) })
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL }
-        apps.forEach { info ->
-            val item = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-                setPadding(dp(2), dp(6), dp(2), dp(6))
-                setOnClickListener { launchApp(info) }
-                contentDescription = info.loadLabel(packageManager).toString()
-            }
-            val iconSize = prefs.getInt("desktop_icon_size",34).coerceIn(28,56)
-            item.addView(ImageView(this).apply { setImageDrawable(info.loadIcon(packageManager)); scaleType=ImageView.ScaleType.FIT_CENTER },
-                LinearLayout.LayoutParams(dp(iconSize),dp(iconSize)))
-            if (prefs.getBoolean("desktop_icon_labels",true)) {
-                item.addView(label(info.loadLabel(packageManager).toString(),8,Color.WHITE,true).apply {
-                    gravity=Gravity.CENTER; maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
-                }, LinearLayout.LayoutParams(dp(64),dp(18)))
-            }
-            list.addView(item, LinearLayout.LayoutParams(dp(56),dp(58)))
+        section.addView(label("Desktop", 16, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        section.addView(Button(this).apply {
+            text = "＋ Add / Customize"; isAllCaps = false; textSize = 10f
+            setTextColor(Color.WHITE); background = rounded(Color.argb(175, 36, 48, 68), 9)
+            setOnClickListener { showDesktopCustomizer() }
+        })
+        surface.addView(section)
+        val info = label(
+            if (linuxScanRunning) "Scanning installed Linux applications…" else
+                "${apps.size} Android apps  •  ${linuxApps.size} Linux apps",
+            10, Color.LTGRAY
+        ).apply { setPadding(0, dp(3), 0, dp(7)) }
+        surface.addView(info)
+
+        appGrid = GridLayout(this).apply { columnCount = if (resources.configuration.screenWidthDp >= 700) 6 else 4 }
+        val hidden = prefs.getStringSet("hidden_desktop_shortcuts", emptySet()) ?: emptySet()
+        apps.forEach { app ->
+            val key = "android:${app.activityInfo.packageName}/${app.activityInfo.name}"
+            if (!hidden.contains(key)) addAndroidDesktopIcon(appGrid, app, key)
         }
-        val scroll = ScrollView(this).apply { overScrollMode=View.OVER_SCROLL_NEVER }
-        scroll.addView(list)
-        dock.addView(scroll, LinearLayout.LayoutParams(dp(58),0,1f))
-        desktop.addView(dock, LinearLayout.LayoutParams(dp(70),-1))
+        if (prefs.getBoolean("show_linux_shortcuts", true)) linuxApps.forEach { app ->
+            val key = "linux:${app.distro}:${app.desktopId}"
+            if (!hidden.contains(key)) addLinuxDesktopIcon(appGrid, app, key)
+        }
+        val scroller = ScrollView(this).apply { overScrollMode = View.OVER_SCROLL_NEVER }
+        scroller.addView(appGrid)
+        surface.addView(scroller, LinearLayout.LayoutParams(-1, 0, 1f))
+        desktop.addView(surface, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        // A familiar bottom dock. Each item can be hidden or restored in Customize.
+        val dock = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = rounded(Color.argb(218, 18, 23, 34), 16)
+            setPadding(dp(7), dp(5), dp(7), dp(5))
+        }
+        val dockItems = listOf(
+            Triple("terminal", "⌘", "Terminal") { openTerminalWindow() },
+            Triple("files", "▤", "Files") { startActivity(Intent(this, FileManagerActivity::class.java)) },
+            Triple("tools", "▣", "Tools") { startActivity(Intent(this, DesktopToolsActivity::class.java)) },
+            Triple("workspaces", "▦", "Spaces") { showWorkspaceSwitcher() },
+            Triple("customize", "✎", "Customize") { showDesktopCustomizer() }
+        )
+        dockItems.forEach { (id, glyph, caption, action) ->
+            if (prefs.getBoolean("dock_$id", true)) addDockButton(dock, glyph, caption, action)
+        }
+        desktop.addView(dock, LinearLayout.LayoutParams(-1, dp(68)))
         setContentView(desktop)
+    }
+
+    private fun addAndroidDesktopIcon(grid: GridLayout, info: ResolveInfo, key: String) {
+        val cell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setPadding(dp(4), dp(8), dp(4), dp(7))
+            background = rounded(Color.argb(35, 225, 232, 255), 12)
+            setOnClickListener { launchApp(info) }
+            setOnLongClickListener { confirmRemoveShortcut(key, info.loadLabel(packageManager).toString()); true }
+        }
+        cell.addView(ImageView(this).apply {
+            setImageDrawable(info.loadIcon(packageManager)); scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(dp(prefs.getInt("desktop_icon_size", 42).coerceIn(28, 64)), dp(prefs.getInt("desktop_icon_size", 42).coerceIn(28, 64))))
+        if (prefs.getBoolean("desktop_icon_labels", true)) cell.addView(label(info.loadLabel(packageManager).toString(), 9, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(-1, dp(32)))
+        grid.addView(cell, GridLayout.LayoutParams().apply {
+            width = 0; height = dp(94); columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+            setMargins(dp(4), dp(4), dp(4), dp(4))
+        })
+    }
+
+    private fun addLinuxDesktopIcon(grid: GridLayout, app: LinuxDesktopApp, key: String) {
+        val cell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setPadding(dp(4), dp(8), dp(4), dp(7))
+            background = rounded(Color.argb(55, 42, 67, 77), 12)
+            setOnClickListener { launchLinuxApp(app) }
+            setOnLongClickListener { confirmRemoveShortcut(key, app.name); true }
+        }
+        cell.addView(label("🐧", prefs.getInt("desktop_icon_size", 42).coerceIn(28, 64), Color.WHITE, true).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(-1, dp(prefs.getInt("desktop_icon_size", 42).coerceIn(28, 64))))
+        if (prefs.getBoolean("desktop_icon_labels", true)) cell.addView(label(app.name, 9, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(-1, dp(32)))
+        grid.addView(cell, GridLayout.LayoutParams().apply {
+            width = 0; height = dp(94); columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+            setMargins(dp(4), dp(4), dp(4), dp(4))
+        })
+    }
+
+    private fun refreshLinuxApps() {
+        if (linuxScanRunning) return
+        linuxScanRunning = true
+        Thread {
+            val roots = distroIds.joinToString(" ") { "/data/local/mt-os/distros/$it" }
+            val script = "for R in $roots; do [ -x \"\$R/bin/sh\" ] || continue; D=\$(basename \"\$R\"); " +
+                "for P in \"\$R/usr/share/applications\" \"\$R/usr/local/share/applications\" \"\$R/root/.local/share/applications\"; do " +
+                "[ -d \"\$P\" ] || continue; find \"\$P\" -type f -name '*.desktop' 2>/dev/null; done | sort -u | " +
+                "while IFS= read -r F; do " +
+                "N=\$(awk -F= '/^Name=/{print substr(\$0,index(\$0,\"=\")+1);exit}' \"\$F\"); " +
+                "E=\$(awk -F= '/^Exec=/{print substr(\$0,index(\$0,\"=\")+1);exit}' \"\$F\"); " +
+                "H=\$(awk -F= '/^(NoDisplay|Hidden)=/{if(\$2==\"true\") print \"yes\"}' \"\$F\" | head -n1); " +
+                "[ -n \"\$N\" ] && [ -n \"\$E\" ] && [ -z \"\$H\" ] || continue; " +
+                "B=\$(basename \"\$F\" .desktop); printf '%s\\t%s\\t%s\\t%s\\n' \"\$D\" \"\$N\" \"\$B\" \"\$E\"; done; done"
+            val result = RootWindowBridge(this).runRoot(script)
+            val parsed = result.lineSequence().mapNotNull { line ->
+                val p = line.split('\t')
+                if (p.size >= 4 && p[1].isNotBlank() && p[2].isNotBlank()) LinuxDesktopApp(p[0], p[1], p[2], p[3]) else null
+            }.distinctBy { it.distro + ":" + it.desktopId }.sortedBy { it.name.lowercase(Locale.getDefault()) }
+            runOnUiThread {
+                linuxApps = parsed
+                linuxScanRunning = false
+                if (!isFinishing && !isDestroyed) buildDesktop()
+            }
+        }.apply { isDaemon = true; name = "MT-GNOME-LinuxAppScan"; start() }
+    }
+
+    private fun launchLinuxApp(app: LinuxDesktopApp) {
+        val root = "/data/local/mt-os/distros/${app.distro}"
+        val safeId = app.desktopId.replace(Regex("[^A-Za-z0-9_.-]"), "")
+        val command = "export DISPLAY=:0; export WAYLAND_DISPLAY=wayland-0; " +
+            "export XDG_RUNTIME_DIR=/run/user/0; " +
+            "gtk-launch ${safeId}.desktop 2>/dev/null || gtk-launch $safeId"
+        val intent = Intent(this, TerminalActivity::class.java)
+            .putExtra("linux_distro", app.distro)
+            .putExtra("linux_command", command)
+            .putExtra("linux_app_name", app.name)
+        try { startActivity(intent) } catch (_: Exception) { toast("Could not open Linux app terminal") }
+        Toast.makeText(this, "Opening ${app.name}. A running X11 or Wayland session is required for its window.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun confirmRemoveShortcut(key: String, title: String) {
+        AlertDialog.Builder(this).setTitle("Remove desktop shortcut?")
+            .setMessage("\"$title\" will be removed from this desktop only. The installed app is not uninstalled.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Remove") { _, _ ->
+                val hidden = (prefs.getStringSet("hidden_desktop_shortcuts", emptySet()) ?: emptySet()).toMutableSet()
+                hidden.add(key); prefs.edit().putStringSet("hidden_desktop_shortcuts", hidden).apply(); buildDesktop()
+            }.show()
+    }
+
+    private fun showDesktopMenu(anchor: View) {
+        val items = arrayOf("Applications", "Terminal", "Files", "Desktop settings", "Refresh Linux apps", "Workspaces", "System settings")
+        AlertDialog.Builder(this).setTitle("MT-GNOME").setItems(items) { _, which ->
+            when (which) {
+                0 -> showApplicationDrawer()
+                1 -> openTerminalWindow()
+                2 -> startActivity(Intent(this, FileManagerActivity::class.java))
+                3 -> showDesktopCustomizer()
+                4 -> refreshLinuxApps()
+                5 -> showWorkspaceSwitcher()
+                6 -> startActivity(Intent(Settings.ACTION_SETTINGS))
+            }
+        }.show()
+    }
+
+    private fun showApplicationDrawer() {
+        val rows = (apps.map { it.loadLabel(packageManager).toString() + "  ·  Android" } +
+            linuxApps.map { it.name + "  ·  Linux (" + it.distro + ")" }).toTypedArray()
+        AlertDialog.Builder(this).setTitle("Applications").setItems(rows) { _, which ->
+            if (which < apps.size) launchApp(apps[which]) else launchLinuxApp(linuxApps[which - apps.size])
+        }.setPositiveButton("Done", null).show()
+    }
+
+    private fun showDesktopCustomizer() {
+        val options = arrayOf("Show desktop icon labels", "Show Android app shortcuts", "Show Linux app shortcuts",
+            "Show Terminal in dock", "Show Files in dock", "Show Tools in dock", "Show Workspaces in dock", "Show Customize in dock")
+        val keys = arrayOf("desktop_icon_labels", "show_android_shortcuts", "show_linux_shortcuts",
+            "dock_terminal", "dock_files", "dock_tools", "dock_workspaces", "dock_customize")
+        val defaults = booleanArrayOf(true, true, true, true, true, true, true, true)
+        val checked = BooleanArray(options.size) { i -> prefs.getBoolean(keys[i], defaults[i]) }
+        AlertDialog.Builder(this).setTitle("Customize desktop")
+            .setMultiChoiceItems(options, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setNeutralButton("Restore shortcuts") { _, _ ->
+                prefs.edit().remove("hidden_desktop_shortcuts").apply(); buildDesktop()
+            }
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Apply") { _, _ ->
+                val edit = prefs.edit()
+                keys.forEachIndexed { i, key -> edit.putBoolean(key, checked[i]) }
+                edit.apply()
+                buildDesktop()
+            }.show()
     }
 
     /** Four persistent desktop spaces; Android continues to own launched app tasks. */
@@ -269,21 +459,11 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun openTerminalWindow() {
-        Thread {
-            val result = RootWindowBridge(this).runRoot(
-                "settings put global enable_freeform_support 1; " +
-                    "settings put global force_resizable_activities 1; " +
-                    "am start --windowingMode 5 -n com.mt.gnome/.TerminalActivity"
-            )
-            val started = result.contains("Starting:") && result.contains("exit=0") &&
-                !result.contains("Error:") && !result.contains("Exception")
-            runOnUiThread {
-                if (!started) {
-                    try { startActivity(Intent(this, TerminalActivity::class.java)) }
-                    catch (_: Exception) { toast("Could not open terminal") }
-                }
-            }
-        }.start()
+        // TerminalActivity is the single terminal application. It shows the distro
+        // catalogue when no rootfs exists, and opens the remembered/first installed
+        // distribution directly when one is available.
+        val intent = Intent(this, TerminalActivity::class.java)
+        try { startActivity(intent) } catch (_: Exception) { toast("Could not open MT Terminal") }
     }
 
     private fun focusSearch() {
