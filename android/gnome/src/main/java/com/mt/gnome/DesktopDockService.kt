@@ -135,7 +135,11 @@ class DesktopDockService : Service() {
             root.addView(item, LinearLayout.LayoutParams(dp(itemWidth), dp(54)))
         }
         shortcut("⌘", "Terminal") {
-            launchComponent("com.mt.gnome", "com.mt.gnome.DistroCatalogActivity")
+            try {
+                startActivity(Intent(this, DistroCatalogActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) {
+                Toast.makeText(this, "Could not open the GNOME Terminal catalogue", Toast.LENGTH_SHORT).show()
+            }
         }
         shortcut("⚙", "Settings") {
             val i = Intent(this, GnomeHomeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
