@@ -80,7 +80,7 @@ internal object LinuxDistroLauncher {
             exec unshare -m /system/bin/sh -c ${quote(inner)} _ "${'$'}BB" ${quote(rootPath)} ${quote(command)}
         """.trimIndent()
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf(resolveSu(), "-c", script))
+            val process = Runtime.getRuntime().exec(arrayOf(resolveSu(), "-c", "exec 2>&1; $script"))
             val output = StringBuilder()
             val reader = Thread {
                 try {
