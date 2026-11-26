@@ -487,7 +487,17 @@ class GnomeHomeActivity : Activity() {
                     background = rounded(Color.rgb(38, 44, 57), 10)
                     setPadding(dp(8), dp(6), dp(8), dp(6))
                 }
-                row.addView(label(if (entry.source == "Android") "▣" else "🐧", 20, Color.WHITE, true))
+                if (entry.androidApp != null) {
+                    val icon = ImageView(this).apply {
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        try { setImageDrawable(entry.androidApp.loadIcon(packageManager)) } catch (_: Exception) {}
+                        contentDescription = entry.name
+                    }
+                    row.addView(icon, LinearLayout.LayoutParams(dp(42), dp(42)))
+                } else {
+                    row.addView(label("🐧", 24, Color.WHITE, true).apply { gravity = Gravity.CENTER },
+                        LinearLayout.LayoutParams(dp(42), dp(42)))
+                }
                 val textColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(9), 0, dp(4), 0) }
                 textColumn.addView(label(entry.name, 12, Color.WHITE, true))
                 textColumn.addView(label("${entry.category}  ·  ${entry.source}", 9, muted))
