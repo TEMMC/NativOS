@@ -372,7 +372,22 @@ class GnomeHomeActivity : Activity() {
 
     private fun linuxAppCategory(app: LinuxDesktopApp): String {
         val categories = app.categories.lowercase(Locale.ROOT)
+        val identity = (app.name + " " + app.desktopId).lowercase(Locale.ROOT)
         return when {
+            listOf("information-gathering", "information_gathering", "reconnaissance").any { categories.contains(it) || identity.contains(it) } -> "Information Gathering"
+            listOf("vulnerability-analysis", "vulnerability_analysis").any { categories.contains(it) || identity.contains(it) } -> "Vulnerability Analysis"
+            listOf("web-application-analysis", "web_application_analysis").any { categories.contains(it) || identity.contains(it) } -> "Web Application Analysis"
+            listOf("database-assessment", "database_assessment").any { categories.contains(it) || identity.contains(it) } -> "Database Assessment"
+            listOf("password-attacks", "password_attacks", "password").any { categories.contains(it) || identity.contains(it) } -> "Password Attacks"
+            listOf("wireless-attacks", "wireless_attacks", "wireless").any { categories.contains(it) || identity.contains(it) } -> "Wireless Attacks"
+            listOf("reverse-engineering", "reverse_engineering").any { categories.contains(it) || identity.contains(it) } -> "Reverse Engineering"
+            listOf("exploitation-tools", "exploitation_tools", "exploit").any { categories.contains(it) || identity.contains(it) } -> "Exploitation Tools"
+            listOf("sniffing-spoofing", "sniffing_spoofing", "sniffer").any { categories.contains(it) || identity.contains(it) } -> "Sniffing & Spoofing"
+            listOf("post-exploitation", "post_exploitation").any { categories.contains(it) || identity.contains(it) } -> "Post Exploitation"
+            listOf("forensics", "forensic").any { categories.contains(it) || identity.contains(it) } -> "Forensics"
+            listOf("reporting", "report").any { categories.contains(it) || identity.contains(it) } -> "Reporting"
+            listOf("social-engineering", "social_engineering").any { categories.contains(it) || identity.contains(it) } -> "Social Engineering"
+            listOf("system-services", "system_services").any { categories.contains(it) || identity.contains(it) } -> "System Services"
             categories.contains("security") || categories.contains("pentest") -> "Security Tools"
             categories.contains("development") || categories.contains("ide") -> "Development"
             categories.contains("network") || categories.contains("webbrowser") -> "Internet & Networking"
@@ -385,7 +400,6 @@ class GnomeHomeActivity : Activity() {
             else -> "Other Linux Applications"
         }
     }
-
     private fun applicationMenuEntries(): List<AppMenuEntry> {
         val result = mutableListOf<AppMenuEntry>()
         if (prefs.getBoolean("show_android_apps", true)) apps.forEach { app ->
@@ -402,7 +416,9 @@ class GnomeHomeActivity : Activity() {
     private fun addShortcut(entry: AppMenuEntry) {
         val shortcuts = (prefs.getStringSet("desktop_shortcuts", emptySet()) ?: emptySet()).toMutableSet()
         shortcuts.add(entry.key)
-        prefs.edit().putStringSet("desktop_shortcuts", shortcuts).apply()
+        val hidden = (prefs.getStringSet("hidden_desktop_shortcuts", emptySet()) ?: emptySet()).toMutableSet()
+        hidden.remove(entry.key)
+        prefs.edit().putStringSet("desktop_shortcuts", shortcuts).putStringSet("hidden_desktop_shortcuts", hidden).apply()
         buildDesktop()
         toast("${entry.name} added to desktop")
     }
@@ -516,7 +532,7 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun showDesktopCustomizer() {
-        val options = arrayOf("Show desktop icon labels", "Show Android app shortcuts", "Show Linux app shortcuts",
+        val options = arrayOf("Show desktop icon labels", "Show Android apps", "Show Linux apps",
             "Show clock in top panel", "Show workspace button", "Show settings button",
             "Show Terminal in dock", "Show Files in dock", "Show Tools in dock", "Show Workspaces in dock", "Show Customize in dock")
         val keys = arrayOf("desktop_icon_labels", "show_android_apps", "show_linux_apps",
