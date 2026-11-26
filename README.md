@@ -1,58 +1,62 @@
 # MT-GNOME
 
-MT-GNOME is an Android-native desktop and launcher for Android phones. It is built as an Android application; it is **not** a Linux chroot, a Wayland desktop, or a port of GNOME Shell.
+MT-GNOME is an Android-native, PC-style desktop launcher for Android phones. It runs as an Android application; it is not a replacement Android ROM or a complete Linux distribution.
 
-## Project goal
+## Desktop experience
 
-Provide a lightweight desktop-style experience on Android with:
+- A clean XFCE-inspired desktop workspace. **No application shortcuts are placed on the desktop by default.**
+- Open the Applications menu to browse installed apps by category, search for an app, launch it, or explicitly add its shortcut to the desktop.
+- Linux desktop entries use their `.desktop` Categories metadata where available. Kali-style security categories are recognised, including Information Gathering, Vulnerability Analysis, Web Application Analysis, Database Assessment, Password Attacks, Wireless Attacks, Reverse Engineering, Exploitation Tools, Sniffing & Spoofing, Post Exploitation, Forensics, Reporting, Social Engineering and System Services.
+- Android apps are grouped into practical desktop categories such as Internet, Multimedia, Office, Development, System, Utilities and Games.
+- Android and Linux app visibility can be controlled independently in Settings. Both are enabled by default.
+- Built-in wallpapers are shown as full image previews before selection; users can also choose an image from phone storage.
+- Customisable themes, accent colours, top panel and dock transparency, icon size, grid density, orientation, pointer/trackpad input and four named workspaces.
+- A dock with shortcuts to Applications, GNOME Terminal catalogue, Files, desktop tools and workspaces.
 
-- A desktop workspace with user-selectable wallpapers and persistent customization.
-- An app drawer for installed Android applications and discovered Linux desktop entries.
-- A desktop app bar that can be shown or hidden.
-- Android app windows with move, resize, minimize, maximize, and close controls where firmware permits.
-- A distribution catalogue for installing and managing ARM64 Linux root filesystems.
-- A Terminal dock shortcut that launches the **real GNOME Terminal package inside an installed Linux distribution**.
-- A package-install action on each supported installed distribution when GNOME Terminal is missing.
-- Isolated Linux application launch using a private mount namespace.
+## Linux distributions and GNOME Terminal
 
-MT-GNOME does **not** embed its own terminal emulator or interactive PTY. It does not substitute Bash, BusyBox, or an Android text view for GNOME Terminal. It does not install or bundle MT-Phosh, MT-Phoc, Phosh, or Phoc.
+The distribution catalogue manages supported ARM64 Linux root filesystems. The Terminal dock action checks for a distribution with the real `gnome-terminal` package. If none is available, the catalogue lets the user install GNOME Terminal into an installed supported distribution.
+
+MT-GNOME does not bundle an Android imitation terminal, its own VT emulator, or a shared host PTY. Linux applications are launched inside the selected distribution using a private mount namespace and a separate `devpts` instance. The Android host's complete `/dev` and host PTY are not shared with the distro process.
+
+A working Linux GUI also requires a running compatible X11 or Wayland session, D-Bus, display sockets, input integration and an Android-hosted surface/window bridge. Installing a Linux GUI package alone does not prove that its window can be displayed. Device validation is required before treating Linux GUI integration as ready.
+
+## Root and BusyBox prerequisite
+
+For the full root-assisted Linux distribution workflow, install and enable a **BusyBox for Android / Magisk BusyBox module** in Magisk, then reboot Android. The BusyBox executable must be available to the root shell or in a standard Magisk module path. BusyBox provides common Unix utilities used by distribution-management and diagnostic shell scripts.
+
+After reboot, verify from a root shell:
+
+```sh
+su -c 'command -v busybox || /system/xbin/busybox | head -n 1'
+```
+
+MT-GNOME Settings → System & Security → **Magisk BusyBox check** can also test whether BusyBox is discoverable and executable. The base Android desktop launcher can still open without BusyBox, but root-assisted Linux distribution features may be incomplete if it is missing.
+
+**Security note:** BusyBox is a utility collection, not a security boundary. It does not grant root permission by itself, make arbitrary shell commands safe, or replace MT-GNOME's private mount namespace and private `devpts` isolation. Approve root requests only when you understand the action.
 
 ## Build
 
-The dedicated GitHub Actions workflow is:
+GitHub Actions workflow:
 
 `.github/workflows/mt-gnome-build.yml`
 
-It builds the Android `:gnome` module and publishes a debug APK. A signed release artifact is produced only when the repository's release-signing secrets are configured.
-
-To build locally with JDK 17 and Android SDK 36:
+Local build with JDK 17 and Android SDK 36:
 
 ```sh
 cd android
 ./gradlew :gnome:assembleDebug
 ```
 
-The resulting debug APK is under:
+The debug APK is generated under `android/gnome/build/outputs/apk/debug/`. Release signing uses the existing NativOS signing secrets; no keystore or passwords are committed.
 
-```
-android/gnome/build/outputs/apk/debug/
-```
+## Architecture and limitations
 
-## Architecture
+- Android application ID: `com.mt.gnome`
+- Kotlin and native Android Views
+- ARM64 target; Android 14 device testing is the current target
+- Embedded X11 and Wayland runtime modules are packaged separately.
+- Android continues to own app permissions, task management and actual window policy. Freeform support depends on firmware and user-approved root access.
+- MT-GNOME does not install or start MT-Phosh, MT-Phoc, Phosh or Phoc.
 
-- Android application module: `:gnome`
-- Application ID: `com.mt.gnome`
-- Minimum Android version: Android 14 (API 34)
-- Kotlin and Android SDK 36
-- Embedded X11 and Wayland runtime modules, independently maintained
-- Linux distro catalogue and package installer
-- Real GNOME Terminal and Linux desktop applications execute inside their selected distro rootfs; no Android-hosted terminal emulator is bundled.
-
-Linux application launch requires root approval and a compatible running X11 or Wayland display session. Installing GNOME Terminal downloads the distribution's graphical dependencies and can require substantial storage and network data. A package being installed does not prove that its GUI can render: display-socket, compositor, input, and D-Bus integration must also be available.
-
-The distro runner uses a private mount namespace and a private devpts instance. It does not bind-mount the Android host's complete `/dev` or share the host PTY device.
-
-
-## MT-GNOME advanced desktop customization
-
-The MT-GNOME launcher includes persistent desktop preferences for built-in and custom wallpapers, 12 desktop themes, custom accent colours, independent top-panel and dock transparency, desktop icon sizing and label visibility, configurable application-grid density (3–8 columns), dock visibility and width, pointer/trackpad input, orientation, and four named desktop workspaces. Preferences are stored locally on the device. Android continues to manage app tasks and system permissions; freeform behaviour depends on firmware support and user-approved root access. Linux desktop-entry discovery does not by itself guarantee that an app window can be displayed: a compatible running X11 or Wayland session and graphics/input integration are required.
+The app is a PC-style launcher and desktop shell, not a full desktop Linux session. Do not treat multi-window behaviour, Linux GUI rendering, compositor lifecycle, external-display support or hardware acceleration as validated until tested on the target phone.
