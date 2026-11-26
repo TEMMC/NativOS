@@ -299,7 +299,7 @@ class GnomeHomeActivity : Activity() {
                 if (p.size >= 4 && p[1].isNotBlank() && p[2].isNotBlank()) LinuxDesktopApp(p[0], p[1], p[2], p[3]) else null
             }.distinctBy { it.distro + ":" + it.desktopId }.sortedBy { it.name.lowercase(Locale.getDefault()) }
             runOnUiThread {
-                linuxApps = parsed
+                linuxApps = parsed.toList()
                 linuxScanRunning = false
                 if (!isFinishing && !isDestroyed) buildDesktop()
             }
