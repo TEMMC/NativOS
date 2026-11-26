@@ -168,8 +168,12 @@ class DistroCatalogActivity : Activity() {
                     Toast.makeText(this, "GNOME Terminal launch requested. A compatible X11 or Wayland session is required.", Toast.LENGTH_LONG).show()
                     finish()
                 } else {
-                    status.text = "Launch failed: ${result.second.take(500)}"
                     showCatalogue()
+                    AlertDialog.Builder(this).setTitle("GNOME Terminal could not start")
+                        .setMessage(result.second.take(1800).ifBlank {
+                            "The application did not remain running. Check that the Linux graphics session and display connection are available."
+                        })
+                        .setPositiveButton("OK", null).show()
                 }
             }
         }.apply { isDaemon = true; start() }
