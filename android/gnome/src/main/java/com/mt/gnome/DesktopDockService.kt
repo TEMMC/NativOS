@@ -135,7 +135,7 @@ class DesktopDockService : Service() {
             root.addView(item, LinearLayout.LayoutParams(dp(itemWidth), dp(54)))
         }
         shortcut("⌘", "Terminal") {
-            launchComponent("com.mt.gnome", "com.mt.gnome.TerminalActivity")
+            launchComponent("com.mt.gnome", "com.mt.gnome.DistroCatalogActivity")
         }
         shortcut("⚙", "Settings") {
             val i = Intent(this, GnomeHomeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
