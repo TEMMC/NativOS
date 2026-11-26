@@ -1,6 +1,7 @@
 package com.mt.gnome
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
