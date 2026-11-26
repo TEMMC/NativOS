@@ -10,6 +10,7 @@ internal object LinuxDistroLauncher {
 
     fun launchGnomeTerminal(id: String): Pair<Int, String> {
         val command = """
+            set -e
             export HOME=/root USER=root LOGNAME=root
             export DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/0
             mkdir -p /run/user/0 /tmp
@@ -20,6 +21,12 @@ internal object LinuxDistroLauncher {
             else
                 nohup gnome-terminal --disable-factory >/tmp/mt-gnome-terminal.log 2>&1 </dev/null &
             fi
+            launch_pid=${'$'}!
+            sleep 1
+            if ! kill -0 "${'$'}launch_pid" 2>/dev/null; then
+                cat /tmp/mt-gnome-terminal.log 2>/dev/null || true
+                exit 1
+            fi
             echo 'GNOME Terminal process started'
         """.trimIndent()
         return runCommand(id, command, 45)
@@ -29,6 +36,7 @@ internal object LinuxDistroLauncher {
         val safe = desktopId.replace(Regex("[^A-Za-z0-9_.-]"), "")
         if (safe.isBlank()) return Pair(2, "Invalid desktop entry identifier")
         val command = """
+            set -e
             export HOME=/root USER=root LOGNAME=root
             export DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/0
             mkdir -p /run/user/0 /tmp
