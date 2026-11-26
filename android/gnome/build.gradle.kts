@@ -18,8 +18,8 @@ android {
         applicationId = "com.mt.gnome"
         minSdk = 34
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-alpha"
+        versionCode = 2
+        versionName = "0.2.0-alpha"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild { cmake { cppFlags += "-std=c++17" } }
     }
@@ -49,7 +49,10 @@ android {
 }
 
 dependencies {
+    // Embedded X11 server and the shared Android-hosted graphics transport.
     implementation(project(":x11-runtime"))
+    // Embedded Wayland compositor and the same shared Android-hosted graphics transport.
+    implementation(project(":wayland-runtime"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("com.termux.termux-app:terminal-view:0.118.0")
     implementation("org.tukaani:xz:1.10")
