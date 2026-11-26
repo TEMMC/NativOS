@@ -726,7 +726,7 @@ class GnomeHomeActivity : Activity() {
                 activityInfo = ActivityInfo().apply {
                     applicationInfo = appInfo
                     packageName = pkg
-                    name = appInfo.className ?: ""
+                    name = ""
                     enabled = appInfo.enabled
                 }
             }
