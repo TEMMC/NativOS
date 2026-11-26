@@ -162,18 +162,22 @@ class GnomeHomeActivity : Activity() {
             setTextColor(Color.WHITE); background = rounded(Color.TRANSPARENT, 8)
             setOnClickListener { showWorkspaceSwitcher() }
         }
-        top.addView(workspace)
-        val clockView = label(now(), 11, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER; setPadding(dp(8), 0, dp(8), 0)
+        if (prefs.getBoolean("show_workspace_button", true)) top.addView(workspace)
+        if (prefs.getBoolean("show_top_clock", true)) {
+            val clockView = label(now(), 11, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER; setPadding(dp(8), 0, dp(8), 0)
+            }
+            clock = clockView
+            top.addView(clockView)
         }
-        clock = clockView
-        top.addView(clockView)
-        val quick = Button(this).apply {
-            text = "⚙"; isAllCaps = false; textSize = 16f
-            setTextColor(Color.WHITE); background = rounded(Color.TRANSPARENT, 8)
-            setOnClickListener { showAppearance() }
+        if (prefs.getBoolean("show_top_settings", true)) {
+            val quick = Button(this).apply {
+                text = "⚙"; isAllCaps = false; textSize = 16f
+                setTextColor(Color.WHITE); background = rounded(Color.TRANSPARENT, 8)
+                setOnClickListener { showAppearance() }
+            }
+            top.addView(quick, LinearLayout.LayoutParams(dp(42), dp(38)))
         }
-        top.addView(quick, LinearLayout.LayoutParams(dp(42), dp(38)))
         desktop.addView(top, LinearLayout.LayoutParams(-1, dp(44)))
 
         // Desktop surface: both Android launchers and installed Linux .desktop entries.
@@ -349,16 +353,16 @@ class GnomeHomeActivity : Activity() {
 
     private fun showDesktopCustomizer() {
         val options = arrayOf("Show desktop icon labels", "Show Android app shortcuts", "Show Linux app shortcuts",
+            "Show clock in top panel", "Show workspace button", "Show settings button",
             "Show Terminal in dock", "Show Files in dock", "Show Tools in dock", "Show Workspaces in dock", "Show Customize in dock")
         val keys = arrayOf("desktop_icon_labels", "show_android_shortcuts", "show_linux_shortcuts",
+            "show_top_clock", "show_workspace_button", "show_top_settings",
             "dock_terminal", "dock_files", "dock_tools", "dock_workspaces", "dock_customize")
-        val defaults = booleanArrayOf(true, true, true, true, true, true, true, true)
+        val defaults = BooleanArray(options.size) { true }
         val checked = BooleanArray(options.size) { i -> prefs.getBoolean(keys[i], defaults[i]) }
         AlertDialog.Builder(this).setTitle("Customize desktop")
             .setMultiChoiceItems(options, checked) { _, which, isChecked -> checked[which] = isChecked }
-            .setNeutralButton("Restore shortcuts") { _, _ ->
-                prefs.edit().remove("hidden_desktop_shortcuts").apply(); buildDesktop()
-            }
+            .setNeutralButton("More options") { _, _ -> showDesktopAdvancedOptions() }
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Apply") { _, _ ->
                 val edit = prefs.edit()
@@ -366,6 +370,51 @@ class GnomeHomeActivity : Activity() {
                 edit.apply()
                 buildDesktop()
             }.show()
+    }
+
+    private fun showDesktopAdvancedOptions() {
+        val options = arrayOf("Change desktop icon size", "Rename desktop", "Change wallpaper",
+            "Restore removed shortcuts", "Reset desktop layout")
+        AlertDialog.Builder(this).setTitle("Advanced desktop options").setItems(options) { _, which ->
+            when (which) {
+                0 -> {
+                    val sizes = arrayOf("Small", "Medium", "Large", "Extra large")
+                    val values = intArrayOf(32, 42, 52, 62)
+                    val current = prefs.getInt("desktop_icon_size", 42)
+                    val selected = values.indices.minByOrNull { kotlin.math.abs(values[it] - current) } ?: 1
+                    AlertDialog.Builder(this).setTitle("Desktop icon size").setSingleChoiceItems(sizes, selected) { dialog, index ->
+                        prefs.edit().putInt("desktop_icon_size", values[index]).apply()
+                        dialog.dismiss(); buildDesktop()
+                    }.setNegativeButton("Cancel", null).show()
+                }
+                1 -> {
+                    val input = EditText(this).apply {
+                        setSingleLine(true)
+                        setText(prefs.getString("desktop_profile_name", "Desktop"))
+                        hint = "Desktop name"
+                    }
+                    AlertDialog.Builder(this).setTitle("Rename desktop").setView(input)
+                        .setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ ->
+                            val name = input.text.toString().trim().take(28)
+                            if (name.isNotEmpty()) prefs.edit().putString("desktop_profile_name", name).apply()
+                            buildDesktop()
+                        }.show()
+                }
+                2 -> chooseWorkspaceWallpaper()
+                3 -> {
+                    prefs.edit().remove("hidden_desktop_shortcuts").apply()
+                    buildDesktop()
+                }
+                4 -> {
+                    val edit = prefs.edit().remove("hidden_desktop_shortcuts")
+                    listOf("dock_terminal", "dock_files", "dock_tools", "dock_workspaces", "dock_customize",
+                        "show_android_shortcuts", "show_linux_shortcuts", "desktop_icon_labels",
+                        "show_top_clock", "show_workspace_button", "show_top_settings").forEach { edit.putBoolean(it, true) }
+                    edit.putInt("desktop_icon_size", 42).apply()
+                    buildDesktop()
+                }
+            }
+        }.show()
     }
 
     /** Four persistent desktop spaces; Android continues to own launched app tasks. */
