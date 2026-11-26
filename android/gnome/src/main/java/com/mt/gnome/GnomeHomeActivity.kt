@@ -146,12 +146,12 @@ class GnomeHomeActivity : Activity() {
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = rounded(Color.argb(205, 18, 23, 34), 14)
+            background = rounded(Color.argb(prefs.getInt("panel_opacity", 82).coerceIn(10, 100) * 255 / 100, 18, 23, 34), 14)
             setPadding(dp(10), dp(5), dp(10), dp(5))
         }
         val menu = Button(this).apply {
             text = "MT  ▾"; isAllCaps = false; textSize = 12f
-            setTextColor(Color.WHITE); background = rounded(themeColors()[2], 10)
+            setTextColor(Color.WHITE); background = rounded(themeColors()[1], 10)
             setOnClickListener { showDesktopMenu(this) }
         }
         top.addView(menu, LinearLayout.LayoutParams(-2, dp(38)))
@@ -203,7 +203,7 @@ class GnomeHomeActivity : Activity() {
         ).apply { setPadding(0, dp(3), 0, dp(7)) }
         surface.addView(info)
 
-        appGrid = GridLayout(this).apply { columnCount = if (resources.configuration.screenWidthDp >= 700) 6 else 4 }
+        appGrid = GridLayout(this).apply { columnCount = prefs.getInt("desktop_columns", if (resources.configuration.screenWidthDp >= 700) 6 else 4).coerceIn(3, 8) }
         val hidden = prefs.getStringSet("hidden_desktop_shortcuts", emptySet()) ?: emptySet()
         apps.forEach { app ->
             val key = "android:${app.activityInfo.packageName}/${app.activityInfo.name}"
@@ -222,7 +222,7 @@ class GnomeHomeActivity : Activity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            background = rounded(Color.argb(218, 18, 23, 34), 16)
+            background = rounded(Color.argb(prefs.getInt("dock_surface_opacity", 88).coerceIn(10, 100) * 255 / 100, 18, 23, 34), 16)
             setPadding(dp(7), dp(5), dp(7), dp(5))
         }
         data class DockEntry(val id: String, val glyph: String, val caption: String, val action: () -> Unit)
@@ -671,7 +671,34 @@ class GnomeHomeActivity : Activity() {
         }
         fun navItem(name:String,open:()->Unit) { nav.addView(label(name,10,Color.WHITE,true).apply { setPadding(dp(7),dp(11),dp(3),dp(11)); setOnClickListener { open() } }) }
         navItem("Appearance") {
-            page("Appearance","Themes, wallpaper and desktop presentation")
+            page("Appearance","Themes, wallpaper, accent colours and translucent surfaces")
+            item("Custom accent colour", "Current: ${prefs.getString("custom_accent", "Theme default") ?: "Theme default"} · changes highlighted desktop controls") {
+                val names = arrayOf("Theme default", "Sky blue", "Violet", "Mint", "Coral", "Amber", "Pink", "White")
+                val values = arrayOf("", "#7DAAFF", "#B69CFF", "#66D9B5", "#FF8A75", "#FFBF5F", "#F08CCB", "#FFFFFF")
+                val current = prefs.getString("custom_accent", "") ?: ""
+                val selected = values.indexOf(current).coerceAtLeast(0)
+                AlertDialog.Builder(this).setTitle("Choose accent colour")
+                    .setSingleChoiceItems(names, selected) { d, i ->
+                        prefs.edit().putString("custom_accent", values[i]).apply()
+                        window.statusBarColor = themeColors()[0]
+                        window.navigationBarColor = themeColors()[0]
+                        buildDesktop(); d.dismiss(); toast("Accent colour updated")
+                    }.setNegativeButton("Cancel", null).show()
+            }
+            item("Top panel transparency", "Current: ${prefs.getInt("panel_opacity", 82)}% · lower values reveal more wallpaper") {
+                val values = intArrayOf(20, 30, 40, 50, 60, 70, 82, 90, 100)
+                AlertDialog.Builder(this).setTitle("Top panel opacity")
+                    .setSingleChoiceItems(values.map { "$it%" }.toTypedArray(), values.indexOf(prefs.getInt("panel_opacity", 82)).coerceAtLeast(0)) { d, i ->
+                        prefs.edit().putInt("panel_opacity", values[i]).apply(); buildDesktop(); d.dismiss()
+                    }.setNegativeButton("Cancel", null).show()
+            }
+            item("Dock transparency", "Current: ${prefs.getInt("dock_surface_opacity", 88)}% · independent from the top panel") {
+                val values = intArrayOf(20, 30, 40, 50, 60, 70, 80, 88, 100)
+                AlertDialog.Builder(this).setTitle("Dock opacity")
+                    .setSingleChoiceItems(values.map { "$it%" }.toTypedArray(), values.indexOf(prefs.getInt("dock_surface_opacity", 88)).coerceAtLeast(0)) { d, i ->
+                        prefs.edit().putInt("dock_surface_opacity", values[i]).apply(); buildDesktop(); d.dismiss()
+                    }.setNegativeButton("Cancel", null).show()
+            }
             item("Desktop theme", "Current: ${prefs.getString("desktop_theme", "Midnight") ?: "Midnight"} · 12 built-in colour styles") {
                 showThemePicker { dialog.dismiss() }
             }
@@ -785,7 +812,15 @@ class GnomeHomeActivity : Activity() {
             item("Default distribution",prefs.getString("active_distro","Select when opening") ?: "Select when opening") { toast("Choose the active distribution in DISTROS") }
         }
         navItem("Display") {
-            page("Display","Screen configuration and desktop layout")
+            page("Display","Screen configuration, desktop density and layout")
+            item("Desktop grid columns", "Current: ${prefs.getInt("desktop_columns", if (resources.configuration.screenWidthDp >= 700) 6 else 4)} columns · choose how tightly app shortcuts are arranged") {
+                val values = intArrayOf(3, 4, 5, 6, 7, 8)
+                val current = prefs.getInt("desktop_columns", if (resources.configuration.screenWidthDp >= 700) 6 else 4)
+                AlertDialog.Builder(this).setTitle("Desktop grid density")
+                    .setSingleChoiceItems(values.map { "$it columns" }.toTypedArray(), values.indexOf(current).coerceAtLeast(0)) { d, i ->
+                        prefs.edit().putInt("desktop_columns", values[i]).apply(); buildDesktop(); d.dismiss()
+                    }.setNegativeButton("Cancel", null).show()
+            }
             item("Orientation",prefs.getString("orientation","landscape") ?: "landscape") { showOrientationSettings() }
             item("Desktop icon size","Current: ${prefs.getInt("desktop_icon_size",34)} dp · changes app icons on the desktop") {
                 val sizes = intArrayOf(28, 34, 40, 48, 56)
@@ -849,7 +884,8 @@ class GnomeHomeActivity : Activity() {
     }
 
     // Lightweight offline theme palette: dock, controls and accent colours only.
-    private fun themeColors(theme: String = prefs.getString("desktop_theme", "Midnight") ?: "Midnight"): IntArray = when (theme) {
+    private fun themeColors(theme: String = prefs.getString("desktop_theme", "Midnight") ?: "Midnight"): IntArray {
+        val colors = when (theme) {
         "Nord" -> intArrayOf(Color.rgb(46,52,64), Color.rgb(136,192,208), Color.rgb(59,66,82), Color.rgb(236,239,244))
         "Dracula" -> intArrayOf(Color.rgb(40,42,54), Color.rgb(189,147,249), Color.rgb(68,71,90), Color.rgb(248,248,242))
         "Solarized" -> intArrayOf(Color.rgb(0,43,54), Color.rgb(38,139,210), Color.rgb(7,54,66), Color.rgb(238,232,213))
@@ -862,6 +898,12 @@ class GnomeHomeActivity : Activity() {
         "Paper" -> intArrayOf(Color.rgb(226,222,211), Color.rgb(44,83,100), Color.rgb(242,239,230), Color.rgb(35,42,48))
         "Light" -> intArrayOf(Color.rgb(235,239,246), Color.rgb(44,91,160), Color.rgb(250,251,255), Color.rgb(34,43,58))
         else -> intArrayOf(Color.rgb(20,22,29), Color.rgb(125,170,255), Color.rgb(45,49,64), Color.rgb(235,239,250))
+        }
+        val customAccent = prefs.getString("custom_accent", "")
+        if (!customAccent.isNullOrBlank()) {
+            try { colors[1] = Color.parseColor(customAccent) } catch (_: IllegalArgumentException) { }
+        }
+        return colors
     }
 
     private fun showThemePicker(onApplied: () -> Unit = {}) {
