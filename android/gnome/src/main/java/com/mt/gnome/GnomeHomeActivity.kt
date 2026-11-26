@@ -465,39 +465,8 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun renderApps() {
-        if (!::appGrid.isInitialized) return
-        appGrid.removeAllViews()
-        val term = if (::search.isInitialized) search.text.toString().trim() else ""
-        val results = apps.filter { it.loadLabel(packageManager).toString().contains(term, true) }
-        results.forEach { info ->
-            val cell = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setPadding(dp(5), dp(9), dp(5), dp(7))
-                background = rounded(Color.argb(55, 205, 205, 235), 14)
-                setOnClickListener { launchApp(info) }
-            }
-            cell.addView(ImageView(this).apply {
-                setImageDrawable(info.loadIcon(packageManager))
-                scaleType = ImageView.ScaleType.FIT_CENTER
-            }, LinearLayout.LayoutParams(dp(42), dp(42)))
-            cell.addView(label(info.loadLabel(packageManager).toString(), 10, Color.WHITE, true).apply {
-                gravity = Gravity.CENTER
-                maxLines = 2
-                setPadding(0, dp(6), 0, 0)
-            }, LinearLayout.LayoutParams(-1, dp(31)))
-            appGrid.addView(cell, GridLayout.LayoutParams().apply {
-                width = 0
-                height = dp(94)
-                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                setMargins(dp(4), dp(4), dp(4), dp(4))
-            })
-        }
-        if (results.isEmpty()) {
-            appGrid.addView(label("No applications found", 13, Color.WHITE, true).apply {
-                setPadding(dp(12), dp(22), 0, 0)
-            }, GridLayout.LayoutParams().apply { columnSpec = GridLayout.spec(0, appGrid.columnCount) })
-        }
+        // Rebuild the unified desktop grid so a refresh never drops Linux shortcuts.
+        if (::appGrid.isInitialized) buildDesktop()
     }
 
     private fun launchApp(info: ResolveInfo) {
