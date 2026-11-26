@@ -294,12 +294,14 @@ class GnomeHomeActivity : Activity() {
                 "[ -n \"\$N\" ] && [ -n \"\$E\" ] && [ -z \"\$H\" ] || continue; " +
                 "B=\$(basename \"\$F\" .desktop); printf '%s\\t%s\\t%s\\t%s\\n' \"\$D\" \"\$N\" \"\$B\" \"\$E\"; done; done"
             val result = RootWindowBridge(this).runRoot(script)
-            val parsed = result.lineSequence().mapNotNull { line ->
+            val parsed: List<LinuxDesktopApp> = result.lineSequence().mapNotNull { line ->
                 val p = line.split('\t')
                 if (p.size >= 4 && p[1].isNotBlank() && p[2].isNotBlank()) LinuxDesktopApp(p[0], p[1], p[2], p[3]) else null
-            }.distinctBy { it.distro + ":" + it.desktopId }.sortedBy { it.name.lowercase(Locale.getDefault()) }
+            }.distinctBy { it.distro + ":" + it.desktopId }
+                .sortedBy { it.name.lowercase(Locale.getDefault()) }
+                .toList()
             runOnUiThread {
-                linuxApps = parsed.toList()
+                linuxApps = parsed
                 linuxScanRunning = false
                 if (!isFinishing && !isDestroyed) buildDesktop()
             }
