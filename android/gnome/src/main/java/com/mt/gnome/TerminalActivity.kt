@@ -107,7 +107,11 @@ class TerminalActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        active = prefs.getString("active_distro", null)
+        val requestedDistro = intent.getStringExtra("linux_distro")
+        active = requestedDistro?.takeIf { exists(it) }
+            ?: prefs.getString("active_distro", null)?.takeIf { exists(it) }
+            ?: distros.firstOrNull { exists(it.id) }?.id
+        if (active != null) prefs.edit().putString("active_distro", active).apply()
         hostActivity = this
         // Termux's VT renderer paints its own default background; changing only the
         // Android View background leaves an opaque black terminal. Use an alpha
@@ -132,7 +136,8 @@ class TerminalActivity : Activity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         applyWindowBounds()
         val id = active
-        if (id != null && exists(id)) startSession(id)
+        val launchCommand = intent.getStringExtra("linux_command").orEmpty()
+        if (id != null && exists(id)) startSession(id, launchCommand)
         else { active = null; showCatalogue() }
     }
 
