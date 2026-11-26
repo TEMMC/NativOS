@@ -184,7 +184,7 @@ class TerminalActivity : Activity() {
             setPadding(dp(8), 0, dp(12), 0)
         })
         val title = TextView(this).apply {
-            text = "MT Terminal"; textSize = 14f; setTextColor(Color.WHITE)
+            text = "GNOME Terminal"; textSize = 14f; setTextColor(Color.WHITE)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), 0, dp(4), 0)
@@ -233,7 +233,7 @@ class TerminalActivity : Activity() {
         // Initialise the status view before attaching or configuring it. The old order
         // dereferenced this lateinit property before assignment on a cold launch.
         output = TextView(this).apply {
-            text = "MT Terminal  •  select an installed distribution"
+            text = "GNOME Terminal  •  select an installed distribution"
             textSize = 10f
             setTextColor(Color.rgb(150, 205, 190))
             maxLines = 2
@@ -284,7 +284,7 @@ class TerminalActivity : Activity() {
             startService(Intent(this, FloatingTerminalService::class.java))
         } else {
             AlertDialog.Builder(this).setTitle("Allow floating terminal")
-                .setMessage("MT Terminal needs Display over other apps permission so it can stay visible while you use other Android apps.")
+                .setMessage("GNOME Terminal needs Display over other apps permission so it can stay visible while you use other Android apps.")
                 .setPositiveButton("Grant permission") { _, _ ->
                     startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         android.net.Uri.parse("package:$packageName")))
@@ -432,7 +432,7 @@ class TerminalActivity : Activity() {
 
     private fun confirmAlpine() {
         AlertDialog.Builder(this).setTitle("Download Alpine Linux?")
-            .setMessage("Download the official Alpine Linux $alpineVersion aarch64 mini root filesystem and its SHA-256 checksum from dl-cdn.alpinelinux.org. MT Terminal verifies the archive before extracting it into its own directory. No desktop environment is installed.")
+            .setMessage("Download the official Alpine Linux $alpineVersion aarch64 mini root filesystem and its SHA-256 checksum from dl-cdn.alpinelinux.org. GNOME Terminal verifies the archive before extracting it into its own directory. No desktop environment is installed.")
             .setPositiveButton("Download and install") { _, _ -> installAlpine() }.setNegativeButton("Cancel", null).show()
     }
 
@@ -591,7 +591,7 @@ class TerminalActivity : Activity() {
 
     private fun confirmLxc(d: Distro) {
         AlertDialog.Builder(this).setTitle("Download ${d.name}?")
-            .setMessage("Download the latest ARM64 root filesystem from the Linux Containers image server. MT Terminal verifies the published SHA-256 checksum before extracting it into an isolated directory. This is a minimal command-line container rootfs, not a bootable phone image. No desktop environment is installed.")
+            .setMessage("Download the latest ARM64 root filesystem from the Linux Containers image server. GNOME Terminal verifies the published SHA-256 checksum before extracting it into an isolated directory. This is a minimal command-line container rootfs, not a bootable phone image. No desktop environment is installed.")
             .setPositiveButton("Download and install") { _, _ -> installLxc(d) }
             .setNegativeButton("Cancel", null).show()
     }
@@ -683,7 +683,7 @@ class TerminalActivity : Activity() {
 
     private fun newSession() {
         val id = active
-        if (id == null || !exists(id)) { showCatalogue(); return }
+        if (id == null || !hasTerminalApp(id)) { showCatalogue(); return }
         startSession(id)
     }
 
@@ -698,7 +698,7 @@ class TerminalActivity : Activity() {
             return
         }
         val session = ShellSession(++sessionCounter, distroId)
-        session.buffer.append("MT Terminal • ${name(distroId)}\n")
+        session.buffer.append("GNOME Terminal • ${name(distroId)}\n")
         sessions.add(session); activeSession = session
         terminalView.visibility = View.VISIBLE
         renderSessionTabs(); output.text = session.buffer.toString()
