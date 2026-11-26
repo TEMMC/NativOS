@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="accessibility_service_description">Allows MT-GNOME to send pointer clicks and gestures when you explicitly enable its trackpad mode.</string>
+    <string name="device_admin_description">Allows MT-GNOME to lock the device when you press the Lock device button. It cannot read or change your screen lock credential.</string>
 </resources>
