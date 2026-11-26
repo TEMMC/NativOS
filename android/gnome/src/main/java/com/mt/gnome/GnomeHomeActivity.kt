@@ -309,17 +309,20 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun launchLinuxApp(app: LinuxDesktopApp) {
-        val root = "/data/local/mt-os/distros/${app.distro}"
-        val safeId = app.desktopId.replace(Regex("[^A-Za-z0-9_.-]"), "")
-        val command = "export DISPLAY=:0; export WAYLAND_DISPLAY=wayland-0; " +
-            "export XDG_RUNTIME_DIR=/run/user/0; " +
-            "gtk-launch ${safeId}.desktop 2>/dev/null || gtk-launch $safeId"
-        val intent = Intent(this, TerminalActivity::class.java)
-            .putExtra("linux_distro", app.distro)
-            .putExtra("linux_command", command)
-            .putExtra("linux_app_name", app.name)
-        try { startActivity(intent) } catch (_: Exception) { toast("Could not open Linux app terminal") }
-        Toast.makeText(this, "Opening ${app.name}. A running X11 or Wayland session is required for its window.", Toast.LENGTH_LONG).show()
+        Thread {
+            val result = LinuxDistroLauncher.launchDesktopEntry(app.distro, app.desktopId)
+            runOnUiThread {
+                if (result.first == 0) {
+                    Toast.makeText(this,
+                        "Launching ${app.name}. A compatible running X11 or Wayland session is required.",
+                        Toast.LENGTH_LONG).show()
+                } else {
+                    AlertDialog.Builder(this).setTitle("Could not launch ${app.name}")
+                        .setMessage(result.second.take(1600))
+                        .setPositiveButton("OK", null).show()
+                }
+            }
+        }.apply { isDaemon = true; name = "MT-GNOME-LinuxAppLaunch"; start() }
     }
 
     private fun confirmRemoveShortcut(key: String, title: String) {
@@ -480,23 +483,11 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun openTerminalWindow() {
-        // The terminal activity itself decides: installed rootfs -> shell,
-        // no installed rootfs -> distribution catalogue. Preserve freeform launch.
-        Thread {
-            val result = RootWindowBridge(this).runRoot(
-                "settings put global enable_freeform_support 1; " +
-                    "settings put global force_resizable_activities 1; " +
-                    "am start --windowingMode 5 -n com.mt.gnome/.TerminalActivity"
-            )
-            val started = result.contains("Starting:") && result.contains("exit=0") &&
-                !result.contains("Error:") && !result.contains("Exception")
-            runOnUiThread {
-                if (!started) {
-                    try { startActivity(Intent(this, TerminalActivity::class.java)) }
-                    catch (_: Exception) { toast("Could not open MT Terminal") }
-                }
-            }
-        }.apply { isDaemon = true; start() }
+        try {
+            startActivity(Intent(this, DistroCatalogActivity::class.java))
+        } catch (e: Exception) {
+            toast("Could not open the Linux distribution catalogue: ${e.message}")
+        }
     }
 
     private fun focusSearch() {
