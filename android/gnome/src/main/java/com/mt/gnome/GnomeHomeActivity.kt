@@ -375,7 +375,7 @@ class GnomeHomeActivity : Activity() {
         val options = arrayOf("Show desktop icon labels", "Show Android app shortcuts", "Show Linux app shortcuts",
             "Show clock in top panel", "Show workspace button", "Show settings button",
             "Show Terminal in dock", "Show Files in dock", "Show Tools in dock", "Show Workspaces in dock", "Show Customize in dock")
-        val keys = arrayOf("desktop_icon_labels", "show_android_shortcuts", "show_linux_shortcuts",
+        val keys = arrayOf("desktop_icon_labels", "show_android_apps", "show_linux_apps",
             "show_top_clock", "show_workspace_button", "show_top_settings",
             "dock_terminal", "dock_files", "dock_tools", "dock_workspaces", "dock_customize")
         val defaults = BooleanArray(options.size) { true }
@@ -428,7 +428,7 @@ class GnomeHomeActivity : Activity() {
                 4 -> {
                     val edit = prefs.edit().remove("hidden_desktop_shortcuts")
                     listOf("dock_terminal", "dock_files", "dock_tools", "dock_workspaces", "dock_customize",
-                        "show_android_shortcuts", "show_linux_shortcuts", "desktop_icon_labels",
+                        "show_android_apps", "show_linux_apps", "desktop_icon_labels",
                         "show_top_clock", "show_workspace_button", "show_top_settings").forEach { edit.putBoolean(it, true) }
                     edit.putInt("desktop_icon_size", 42).apply()
                     buildDesktop()
@@ -1089,6 +1089,7 @@ class GnomeHomeActivity : Activity() {
         Thread {
             val dollar = 36.toChar()
             val command = "B=" + dollar + "(command -v busybox 2>/dev/null); " +
+                "if [ -z \"" + dollar + "B\" ]; then for C in /system/xbin/busybox /system/bin/busybox /data/adb/modules/*/system/xbin/busybox /data/adb/modules/*/system/bin/busybox; do [ -x \"$C\" ] && B=\"$C\" && break; done; fi; " +
                 "if [ -n \"" + dollar + "B\" ]; then echo \"Found: " + dollar + "B\"; " +
                 "\"" + dollar + "B\" | head -n 1; \"" + dollar + "B\" true && echo 'BusyBox execution: OK'; " +
                 "else echo 'BusyBox was not found in the root shell PATH.'; fi"
