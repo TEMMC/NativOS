@@ -112,16 +112,16 @@ jobs:
           grep -q 'implementation(project(":x11-runtime"))' android/gnome/build.gradle.kts
           grep -q 'implementation(project(":wayland-runtime"))' android/gnome/build.gradle.kts
           echo "Both embedded graphics runtimes and shared hosted renderer are wired into MT-GNOME."
-      - name: Guard Android host PTY isolation
+      - name: Guard isolated Linux application launch namespace
         run: |
           set -euo pipefail
-          TERMINAL=android/gnome/src/main/java/com/mt/gnome/TerminalActivity.kt
-          if grep -Fq 'mount --bind /dev ' "$TERMINAL"; then exit 1; fi
-          if grep -Fq 'ln -sf /dev/pts/ptmx' "$TERMINAL"; then exit 1; fi
-          grep -Fq 'unshare -m' "$TERMINAL"
-          grep -Fq 'mount --make-rprivate /' "$TERMINAL"
-          grep -Fq 'newinstance,ptmxmode=0666' "$TERMINAL"
-          echo "Terminal mount isolation guard passed."
+          LAUNCHER=android/gnome/src/main/java/com/mt/gnome/LinuxDistroLauncher.kt
+          if grep -Fq 'mount --bind /dev ' "$LAUNCHER"; then exit 1; fi
+          if grep -Fq 'ln -sf /dev/pts/ptmx' "$LAUNCHER"; then exit 1; fi
+          grep -Fq 'unshare -m' "$LAUNCHER"
+          grep -Fq 'mount --make-rprivate /' "$LAUNCHER"
+          grep -Fq 'newinstance,ptmxmode=0666' "$LAUNCHER"
+          echo "Private Linux application mount namespace guard passed."
       - name: Configure Gradle dependency cache
         uses: gradle/actions/setup-gradle@v4
         with:
