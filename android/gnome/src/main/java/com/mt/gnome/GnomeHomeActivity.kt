@@ -445,7 +445,7 @@ class GnomeHomeActivity : Activity() {
         val appList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val appScroll = ScrollView(this).apply { addView(appList); isFillViewport = true }
         root.addView(appScroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        val renderApps = {
+        fun renderApps() {
             categoryBar.removeAllViews()
             categories.forEach { category ->
                 val chip = Button(this).apply {
@@ -454,7 +454,7 @@ class GnomeHomeActivity : Activity() {
                     textSize = 10f
                     setTextColor(Color.WHITE)
                     background = rounded(if (selectedCategory == category) themeColors()[1] else Color.rgb(45, 51, 66), 9)
-                    setOnClickListener { selectedCategory = category; renderApplicationMenu() }
+                    setOnClickListener { selectedCategory = category; renderApps() }
                 }
                 categoryBar.addView(chip, LinearLayout.LayoutParams(-2, dp(38)).apply { setMargins(dp(3), dp(4), dp(3), dp(4)) })
             }
@@ -497,9 +497,6 @@ class GnomeHomeActivity : Activity() {
                 row.addView(add, LinearLayout.LayoutParams(dp(42), dp(40)))
                 appList.addView(row, LinearLayout.LayoutParams(-1, dp(58)).apply { bottomMargin = dp(5) })
             }
-        }
-        fun renderApplicationMenu() {
-            renderApps()
         }
         searchBox.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -614,14 +611,82 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun chooseWorkspaceWallpaper() {
-        val choices = arrayOf("Aurora", "Forest", "Mountain Peaks", "Tropical Beach", "Open Landscape")
-        AlertDialog.Builder(this).setTitle("Workspace " + activeWorkspace + " wallpaper")
-            .setItems(choices) { _, which ->
-                wallpaperName = choices[which]
-                prefs.edit().putString("workspace_${activeWorkspace}_wallpaper", wallpaperName).apply()
-                buildDesktop()
-            }.show()
+        showWallpaperPicker()
     }
+    private fun showWallpaperPicker(onSelected: (() -> Unit)? = null) {
+        val choices = listOf(
+            "Mountain Lake" to "mountain_lake.jpg",
+            "Forest" to "forest.jpg",
+            "Mountain Peaks" to "mountain_peaks.jpg",
+            "Tropical Beach" to "tropical_beach.jpg",
+            "Open Landscape" to "open_landscape.jpg"
+        )
+        val dialog = Dialog(this)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(Color.rgb(24, 28, 38), 18)
+        }
+        root.addView(label("Choose a wallpaper", 19, Color.WHITE, true).apply {
+            setPadding(dp(4), dp(4), dp(4), dp(10))
+        })
+        root.addView(label("Tap an image to apply it to your desktop.", 10, muted).apply {
+            setPadding(dp(4), 0, dp(4), dp(8))
+        })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply { addView(list); isFillViewport = true }
+        choices.forEach { (name, asset) ->
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = rounded(Color.rgb(40, 46, 60), 12)
+                setPadding(dp(7), dp(7), dp(7), dp(7))
+            }
+            val preview = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = "$name wallpaper preview"
+                try {
+                    val options = BitmapFactory.Options().apply { inSampleSize = 3 }
+                    assets.open("wallpapers/$asset").use { stream ->
+                        setImageBitmap(BitmapFactory.decodeStream(stream, null, options))
+                    }
+                } catch (_: Exception) { setBackgroundColor(Color.DKGRAY) }
+            }
+            card.addView(preview, LinearLayout.LayoutParams(-1, dp(118)))
+            card.addView(label(if (wallpaperName == name) "✓  $name  ·  Current" else name,
+                12, Color.WHITE, true).apply { setPadding(dp(5), dp(7), dp(5), dp(4)) })
+            card.setOnClickListener {
+                wallpaperName = name
+                prefs.edit().putString("wallpaper", name)
+                    .putString("workspace_${activeWorkspace}_wallpaper", name)
+                    .remove("wallpaper_uri").apply()
+                buildDesktop()
+                dialog.dismiss()
+                onSelected?.invoke()
+                toast("$name wallpaper applied")
+            }
+            list.addView(card, LinearLayout.LayoutParams(-1, dp(158)).apply { bottomMargin = dp(9) })
+        }
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(Button(this).apply {
+            text = "Choose image from phone"; isAllCaps = false
+            setOnClickListener {
+                dialog.dismiss()
+                val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    type = "image/*"; addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                }
+                startActivityForResult(pick, wallpaperRequest)
+            }
+        }, LinearLayout.LayoutParams(-1, dp(44)))
+        root.addView(Button(this).apply { text = "Close"; isAllCaps = false; setOnClickListener { dialog.dismiss() } },
+            LinearLayout.LayoutParams(-1, dp(40)))
+        dialog.setContentView(root)
+        dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(),
+            (resources.displayMetrics.heightPixels * .86f).toInt())
+    }
+
     private fun loadApps() {
         val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         apps = packageManager.queryIntentActivities(query, 0)
@@ -854,10 +919,8 @@ class GnomeHomeActivity : Activity() {
             item("Desktop theme", "Current: ${prefs.getString("desktop_theme", "Midnight") ?: "Midnight"} · 12 built-in colour styles") {
                 showThemePicker { dialog.dismiss() }
             }
-            listOf("Mountain Lake","Forest","Mountain Peaks","Tropical Beach","Open Landscape").forEach { name ->
-                item(name,if(wallpaperName==name) "Built-in wallpaper" else "") {
-                    wallpaperName=name; prefs.edit().putString("wallpaper",name).remove("wallpaper_uri").apply(); buildDesktop(); dialog.dismiss()
-                }
+            item("Choose built-in wallpaper", "Browse large image previews before applying a wallpaper") {
+                showWallpaperPicker { dialog.dismiss() }
             }
             item("Choose from phone storage","Select an image from internal storage or SD card") {
                 val pick=Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type="image/*"; addCategory(Intent.CATEGORY_OPENABLE); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) }
