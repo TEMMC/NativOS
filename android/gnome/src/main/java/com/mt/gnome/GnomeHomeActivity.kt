@@ -71,7 +71,6 @@ class GnomeHomeActivity : Activity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         buildDesktop()
-        renderApps()
         updateResolution()
         updateRootStatus()
         refreshLinuxApps()
@@ -221,12 +220,13 @@ class GnomeHomeActivity : Activity() {
             background = rounded(Color.argb(218, 18, 23, 34), 16)
             setPadding(dp(7), dp(5), dp(7), dp(5))
         }
+        data class DockEntry(val id: String, val glyph: String, val caption: String, val action: () -> Unit)
         val dockItems = listOf(
-            Triple("terminal", "⌘", "Terminal") { openTerminalWindow() },
-            Triple("files", "▤", "Files") { startActivity(Intent(this, FileManagerActivity::class.java)) },
-            Triple("tools", "▣", "Tools") { startActivity(Intent(this, DesktopToolsActivity::class.java)) },
-            Triple("workspaces", "▦", "Spaces") { showWorkspaceSwitcher() },
-            Triple("customize", "✎", "Customize") { showDesktopCustomizer() }
+            DockEntry("terminal", "⌘", "Terminal") { openTerminalWindow() },
+            DockEntry("files", "▤", "Files") { startActivity(Intent(this, FileManagerActivity::class.java)) },
+            DockEntry("tools", "▣", "Tools") { startActivity(Intent(this, DesktopToolsActivity::class.java)) },
+            DockEntry("workspaces", "▦", "Spaces") { showWorkspaceSwitcher() },
+            DockEntry("customize", "✎", "Customize") { showDesktopCustomizer() }
         )
         dockItems.forEach { (id, glyph, caption, action) ->
             if (prefs.getBoolean("dock_$id", true)) addDockButton(dock, glyph, caption, action)
@@ -1012,18 +1012,21 @@ class GnomeHomeActivity : Activity() {
     private fun now() = SimpleDateFormat("EEE  d MMM  •  HH:mm", Locale.getDefault()).format(Date())
 
     private fun addDockButton(dock: LinearLayout, glyph: String, caption: String, action: () -> Unit) {
+        val horizontal = dock.orientation == LinearLayout.HORIZONTAL
         val item = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, dp(8))
+            setPadding(dp(3), dp(5), dp(3), dp(5))
             setOnClickListener { action() }
             isClickable = true
             background = rounded(themeColors()[2], 12)
+            contentDescription = caption
         }
         item.addView(label(glyph, 22, themeColors()[1], true).apply { gravity = Gravity.CENTER })
         item.addView(label(caption, 8, themeColors()[3], true).apply { gravity = Gravity.CENTER })
-        val lp = LinearLayout.LayoutParams(-1, dp(58))
-        lp.bottomMargin = dp(8)
+        val lp = if (horizontal) LinearLayout.LayoutParams(0, -1, 1f)
+            else LinearLayout.LayoutParams(-1, dp(58))
+        if (horizontal) lp.setMargins(dp(3), 0, dp(3), 0) else lp.bottomMargin = dp(8)
         dock.addView(item, lp)
     }
 
