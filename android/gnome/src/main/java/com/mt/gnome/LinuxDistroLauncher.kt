@@ -70,7 +70,85 @@ internal object LinuxDistroLauncher {
             ln -sf /proc/self/fd/2 "${'$'}R/dev/stderr"
             "${'$'}BB" mount -t proc proc "${'$'}R/proc"
             "${'$'}BB" mount -t sysfs sysfs "${'$'}R/sys"
-            exec chroot "${'$'}R" /bin/sh -c "${'$'}CMD"
+            exec chroot "${'
+        """.trimIndent()
+        val script = """
+            PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/vendor/bin:/product/bin:${'$'}PATH
+            export PATH
+            BB='$bbPath'
+            if [ ! -x "${'$'}BB" ]; then BB=${'$'}(command -v busybox) || exit 126; fi
+            exec unshare -m /system/bin/sh -c ${quote(inner)} _ "${'$'}BB" ${quote(rootPath)} ${quote(command)}
+        """.trimIndent()
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf(resolveSu(), "-c", "exec 2>&1; $script"))
+            val output = StringBuilder()
+            val reader = Thread {
+                try {
+                    process.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { synchronized(output) { output.append(it).append('\n') } }
+                    }
+                } catch (_: Exception) { }
+            }.apply { isDaemon = true; start() }
+            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                process.destroy()
+                if (process.isAlive) process.destroyForcibly()
+                reader.join(500)
+                return Pair(124, "Linux command timed out after $timeoutSeconds seconds")
+            }
+            reader.join(1500)
+            Pair(process.exitValue(), synchronized(output) { output.toString() })
+        } catch (e: Exception) {
+            Pair(126, e.message ?: e.toString())
+        }
+    }
+
+    private fun resolveSu(): String {
+        val candidates = listOf("/system/bin/su", "/system/xbin/su", "/sbin/su", "/debug_ramdisk/su", "/data/adb/magisk/su", "/data/adb/ksu/bin/su")
+        return candidates.firstOrNull { File(it).canExecute() } ?: "su"
+    }
+
+    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+}
+}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root; exec /bin/sh -c "$1"' _ "${'
+        """.trimIndent()
+        val script = """
+            PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/vendor/bin:/product/bin:${'$'}PATH
+            export PATH
+            BB='$bbPath'
+            if [ ! -x "${'$'}BB" ]; then BB=${'$'}(command -v busybox) || exit 126; fi
+            exec unshare -m /system/bin/sh -c ${quote(inner)} _ "${'$'}BB" ${quote(rootPath)} ${quote(command)}
+        """.trimIndent()
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf(resolveSu(), "-c", "exec 2>&1; $script"))
+            val output = StringBuilder()
+            val reader = Thread {
+                try {
+                    process.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { synchronized(output) { output.append(it).append('\n') } }
+                    }
+                } catch (_: Exception) { }
+            }.apply { isDaemon = true; start() }
+            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                process.destroy()
+                if (process.isAlive) process.destroyForcibly()
+                reader.join(500)
+                return Pair(124, "Linux command timed out after $timeoutSeconds seconds")
+            }
+            reader.join(1500)
+            Pair(process.exitValue(), synchronized(output) { output.toString() })
+        } catch (e: Exception) {
+            Pair(126, e.message ?: e.toString())
+        }
+    }
+
+    private fun resolveSu(): String {
+        val candidates = listOf("/system/bin/su", "/system/xbin/su", "/sbin/su", "/debug_ramdisk/su", "/data/adb/magisk/su", "/data/adb/ksu/bin/su")
+        return candidates.firstOrNull { File(it).canExecute() } ?: "su"
+    }
+
+    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+}
+}CMD"
         """.trimIndent()
         val script = """
             PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/vendor/bin:/product/bin:${'$'}PATH
