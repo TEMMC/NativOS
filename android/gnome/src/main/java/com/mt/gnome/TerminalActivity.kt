@@ -108,9 +108,9 @@ class TerminalActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val requestedDistro = intent.getStringExtra("linux_distro")
-        active = requestedDistro?.takeIf { exists(it) }
-            ?: prefs.getString("active_distro", null)?.takeIf { exists(it) }
-            ?: distros.firstOrNull { exists(it.id) }?.id
+        active = requestedDistro?.takeIf { hasTerminalApp(it) }
+            ?: prefs.getString("active_distro", null)?.takeIf { hasTerminalApp(it) }
+            ?: distros.firstOrNull { hasTerminalApp(it.id) }?.id
         if (active != null) prefs.edit().putString("active_distro", active).apply()
         hostActivity = this
         // Termux's VT renderer paints its own default background; changing only the
@@ -137,7 +137,7 @@ class TerminalActivity : Activity() {
         applyWindowBounds()
         val id = active
         val launchCommand = intent.getStringExtra("linux_command").orEmpty()
-        if (id != null && exists(id)) startSession(id, launchCommand)
+        if (id != null && hasTerminalApp(id)) startSession(id, launchCommand)
         else { active = null; showCatalogue() }
     }
 
@@ -150,6 +150,17 @@ class TerminalActivity : Activity() {
         // This also recognises valid installs created by older app versions.
         return try {
             Runtime.getRuntime().exec(arrayOf("su", "-c", "test -x '$p/bin/sh' && test -f '$p/etc/os-release' && test -d '$p/usr/bin' && test -d '$p/var'")).waitFor() == 0
+        } catch (_: Exception) { false }
+    }
+
+    // GNOME Terminal is the terminal window/emulator in MT-GNOME; Bash is the
+    // interactive shell installed inside each selected Linux distribution.
+    private fun hasTerminalApp(id: String): Boolean {
+        if (!exists(id)) return false
+        val p = root(id)
+        return try {
+            Runtime.getRuntime().exec(arrayOf("su", "-c",
+                "test -x '$p/bin/bash' -o -x '$p/usr/bin/bash'")).waitFor() == 0
         } catch (_: Exception) { false }
     }
 
@@ -380,33 +391,36 @@ class TerminalActivity : Activity() {
 
     private fun showCatalogue() {
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
-        panel.addView(TextView(this).apply { text = "Choose your Linux distribution"; textSize = 20f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD })
+        panel.addView(TextView(this).apply { text = "Install GNOME Terminal"; textSize = 20f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD })
         panel.addView(TextView(this).apply {
-            text = "First launch: choose a minimal ARM64 Linux system to download. After installation, MT Terminal opens that distribution automatically. All systems are command-line-only: no desktop environments or graphical bundles."
+            text = "Choose a Linux distribution to install. If you already installed a distribution, select Install GNOME Terminal on its card. Once Bash is installed, the desktop Terminal button opens GNOME Terminal directly."
             textSize = 12f; setTextColor(Color.LTGRAY); setPadding(0, dp(6), 0, dp(10))
         })
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val inner = ScrollView(this)
         distros.forEach { d ->
             val installed = exists(d.id)
-            val state = when { installed -> "INSTALLED • OPEN"; d.id == "alpine" -> "OFFICIAL DOWNLOAD"; else -> "ARM64 DOWNLOAD" }
+            val terminalReady = installed && hasTerminalApp(d.id)
+            val state = when {
+                terminalReady -> "INSTALLED • GNOME TERMINAL READY"
+                installed -> "INSTALLED • TERMINAL NOT INSTALLED"
+                d.id == "alpine" -> "OFFICIAL DOWNLOAD"
+                else -> "ARM64 DOWNLOAD"
+            }
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = rounded(Color.rgb(34, 42, 58), 12)
-                setOnClickListener {
-                    when { installed -> select(d.id); d.id == "alpine" -> confirmAlpine(); else -> confirmLxc(d) }
-                }
             }
             card.addView(TextView(this).apply { text = "${d.name}   ·   $state"; textSize = 14f
                 setTextColor(if (installed || d.id == "alpine") Color.rgb(111, 220, 170) else Color.WHITE); typeface = Typeface.DEFAULT_BOLD })
             card.addView(TextView(this).apply { text = "${d.summary}\nPackage manager: ${d.manager}"; textSize = 11f; setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, dp(8)) })
             if (installed) {
-                val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-                val installButton = btn("Install terminal") { installTerminalForDistro(d) }
-                val openButton = btn("Open") { select(d.id) }
-                actions.addView(installButton, LinearLayout.LayoutParams(0, dp(38), 1f).apply { rightMargin = dp(6) })
-                actions.addView(openButton, LinearLayout.LayoutParams(0, dp(38), 1f))
-                card.addView(actions)
+                val action = if (terminalReady) {
+                    btn("Open GNOME Terminal") { select(d.id) }
+                } else {
+                    btn("Install GNOME Terminal") { installTerminalForDistro(d) }
+                }
+                card.addView(action, LinearLayout.LayoutParams(-1, dp(40)))
             } else {
                 card.setOnClickListener { if (d.id == "alpine") confirmAlpine() else confirmLxc(d) }
             }
@@ -558,9 +572,9 @@ class TerminalActivity : Activity() {
             else -> "echo 'No terminal setup recipe is available for this distribution.'"
         }
         AlertDialog.Builder(this)
-            .setTitle("Install terminal for ${d.name}?")
-            .setMessage("This installs Bash and terminal colour/key support inside the existing Linux distribution. It does not download the distribution again. An internet connection is required.")
-            .setPositiveButton("Install terminal") { _, _ ->
+            .setTitle("Install GNOME Terminal for ${d.name}?")
+            .setMessage("This installs Bash and terminal colour/key support inside the existing Linux distribution. MT-GNOME provides the GNOME Terminal window and VT emulator. It does not download the distribution again. An internet connection is required.")
+            .setPositiveButton("Install GNOME Terminal") { _, _ ->
                 active = d.id
                 prefs.edit().putString("active_distro", d.id).apply()
                 startSession(d.id, "$command; if command -v bash >/dev/null 2>&1; then exec bash -l; else echo 'Terminal setup did not complete. Check the package manager output and retry.'; fi")
@@ -693,7 +707,7 @@ class TerminalActivity : Activity() {
         appendToSession(session, "[Starting ${name(distroId)} interactive root shell…]\n")
         try {
             // Private mount namespace prevents distro mounts from mutating Android's /dev.
-            val shell = """PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/vendor/bin:/product/bin:${'$'}PATH; export PATH; command -v unshare >/dev/null 2>&1 || { echo 'MT-GNOME: unshare unavailable; refusing unsafe startup.' >&2; exit 126; }; BB=/data/adb/magisk/busybox; [ -x "${'$'}BB" ] || BB=$(command -v busybox) || { echo 'MT-GNOME: Magisk BusyBox is required for isolated mounts.' >&2; exit 126; }; exec unshare -m /system/bin/sh -c 'set -eu; BB="${'$'}2"; "${'$'}BB" mount --make-rprivate /; R="${'$'}1"; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; "${'$'}BB" mount -t tmpfs -o mode=755,nosuid tmpfs "${'$'}R/dev"; for spec in "null 1 3" "zero 1 5" "full 1 7" "random 1 8" "urandom 1 9" "tty 5 0"; do set -- ${'$'}spec; "${'$'}BB" mknod "${'$'}R/dev/${'$'}1" c "${'$'}2" "${'$'}3"; chmod 666 "${'$'}R/dev/${'$'}1"; "${'$'}BB" mount --bind "/dev/${'$'}1" "${'$'}R/dev/${'$'}1"; done; mkdir -p "${'$'}R/dev/pts" "${'$'}R/dev/shm"; "${'$'}BB" mount -t devpts -o newinstance,ptmxmode=0666,mode=0620 devpts "${'$'}R/dev/pts"; ln -s pts/ptmx "${'$'}R/dev/ptmx"; "${'$'}BB" mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "${'$'}R/dev/shm"; ln -s /proc/self/fd "${'$'}R/dev/fd"; ln -s /proc/self/fd/0 "${'$'}R/dev/stdin"; ln -s /proc/self/fd/1 "${'$'}R/dev/stdout"; ln -s /proc/self/fd/2 "${'$'}R/dev/stderr"; "${'$'}BB" mount -t proc proc "${'$'}R/proc"; "${'$'}BB" mount -t sysfs sysfs "${'$'}R/sys"; exec chroot "${'$'}R" /bin/sh -c '\\''export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor; export PS1="root@mt-gnome:~$ "; cd /root 2>/dev/null || cd /; exec /bin/sh -i'\\'' ' _ '$rootPath' "${'$'}BB""""
+            val shell = """PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/vendor/bin:/product/bin:${'$'}PATH; export PATH; command -v unshare >/dev/null 2>&1 || { echo 'MT-GNOME: unshare unavailable; refusing unsafe startup.' >&2; exit 126; }; BB=/data/adb/magisk/busybox; [ -x "${'$'}BB" ] || BB=$(command -v busybox) || { echo 'MT-GNOME: Magisk BusyBox is required for isolated mounts.' >&2; exit 126; }; exec unshare -m /system/bin/sh -c 'set -eu; BB="${'$'}2"; "${'$'}BB" mount --make-rprivate /; R="${'$'}1"; test -x "${'$'}R/bin/sh" || exit 20; mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run"; "${'$'}BB" mount -t tmpfs -o mode=755,nosuid tmpfs "${'$'}R/dev"; for spec in "null 1 3" "zero 1 5" "full 1 7" "random 1 8" "urandom 1 9" "tty 5 0"; do set -- ${'$'}spec; "${'$'}BB" mknod "${'$'}R/dev/${'$'}1" c "${'$'}2" "${'$'}3"; chmod 666 "${'$'}R/dev/${'$'}1"; "${'$'}BB" mount --bind "/dev/${'$'}1" "${'$'}R/dev/${'$'}1"; done; mkdir -p "${'$'}R/dev/pts" "${'$'}R/dev/shm"; "${'$'}BB" mount -t devpts -o newinstance,ptmxmode=0666,mode=0620 devpts "${'$'}R/dev/pts"; ln -s pts/ptmx "${'$'}R/dev/ptmx"; "${'$'}BB" mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "${'$'}R/dev/shm"; ln -s /proc/self/fd "${'$'}R/dev/fd"; ln -s /proc/self/fd/0 "${'$'}R/dev/stdin"; ln -s /proc/self/fd/1 "${'$'}R/dev/stdout"; ln -s /proc/self/fd/2 "${'$'}R/dev/stderr"; "${'$'}BB" mount -t proc proc "${'$'}R/proc"; "${'$'}BB" mount -t sysfs sysfs "${'$'}R/sys"; exec chroot "${'$'}R" /bin/sh -c '\\''export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root TERM=xterm-256color COLORTERM=truecolor; export PS1="root@mt-gnome:~$ "; cd /root 2>/dev/null || cd /; if [ -x /bin/bash ]; then exec /bin/bash -i; else exec /bin/sh -i; fi'\\'' ' _ '$rootPath' "${'$'}BB""""
             // Start from Android's guaranteed system shell, then let its PATH resolve
             // Magisk's su binary. Do not hard-code /system/bin/su: Samsung firmware may
             // expose su from /system/xbin or another PATH directory.
@@ -848,7 +862,7 @@ class TerminalActivity : Activity() {
         val session = activeSession
         val vt = session?.vtSession
         val alive = try { vt != null && vt.isRunning && !session.closing && !session.exited } catch (_: Exception) { false }
-        output.text = if (session == null) "No terminal session. Tap New + to start one." else "MT Terminal • ${name(session.distroId)} • VT emulator"
+        output.text = if (session == null) "No GNOME Terminal session. Tap New + to start one." else "GNOME Terminal • ${name(session.distroId)} • VT emulator"
         busy = session?.starting ?: false
         terminalView.visibility = if (alive || session?.starting == true) View.VISIBLE else View.GONE
         terminalView.isEnabled = !busy && alive
