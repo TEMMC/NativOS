@@ -443,7 +443,7 @@ class GnomeHomeActivity : Activity() {
         root.addView(label("Applications", 20, Color.WHITE, true).apply { setPadding(dp(4), dp(4), dp(4), dp(8)) })
         val searchBox = EditText(this).apply {
             hint = "Search applications…"
-            singleLine = true
+            isSingleLine = true
             textSize = 14f
             setTextColor(Color.WHITE)
             setHintTextColor(muted)
