@@ -28,7 +28,7 @@ For the full root-assisted Linux distribution workflow, install and enable a **B
 After reboot, verify from a root shell:
 
 ```sh
-su -c 'command -v busybox || /system/xbin/busybox | head -n 1'
+su -c 'B=$(command -v busybox); [ -n "$B" ] && "$B" | head -n 1'
 ```
 
 MT-GNOME Settings → System & Security → **Magisk BusyBox check** can also test whether BusyBox is discoverable and executable. The base Android desktop launcher can still open without BusyBox, but root-assisted Linux distribution features may be incomplete if it is missing.
