@@ -2,6 +2,9 @@ package com.mt.gnome
 
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.app.KeyguardManager
 import android.content.IntentFilter
 import android.content.ClipboardManager
 import android.content.Context
@@ -68,6 +71,27 @@ class DesktopToolsActivity : Activity() {
             startActivity(Intent(Settings.ACTION_SETTINGS))
         })
         refreshMonitor()
+
+        section("Security & lock screen", "Choose the screen-lock style in Android's trusted setup. MT-GNOME never stores your PIN, pattern or password.")
+        row(button("Choose PIN") { configureScreenLock("PIN") },
+            button("Choose pattern") { configureScreenLock("pattern") },
+            button("Choose password") { configureScreenLock("password") })
+        row(button("Lock device now") { lockDevice() },
+            button("Screen lock settings") { openSettings(Settings.ACTION_SECURITY_SETTINGS) })
+
+        section("Photos, video & camera", "Open Android's photo and video pickers or launch the camera. Media stays under Android's permission and picker controls.")
+        row(button("Photos") { openMediaPicker("image/*", "Select a photo") },
+            button("Videos") { openMediaPicker("video/*", "Select a video") })
+        row(button("Camera") { openExternal(Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)) },
+            button("Record video") { openExternal(Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE)) })
+
+        section("Notification centre", "Manage app alerts, notification-listener access and Do Not Disturb through Android's system controls.")
+        row(button("App notifications") {
+            try { startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)) }
+            catch (_: Exception) { openSettings(Settings.ACTION_SETTINGS) }
+        }, button("Notification access") { openSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) })
+        row(button("Do Not Disturb") { openSettings(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS) },
+            button("Lock-screen alerts") { openSettings(Settings.ACTION_SECURITY_SETTINGS) })
 
         section("Files", "Browse folders you explicitly grant to MT-GNOME. Create folders, open, rename, delete and share documents through Android's Storage Access Framework.")
         row(button("Open MT Files") {
@@ -151,6 +175,69 @@ class DesktopToolsActivity : Activity() {
                 prefs.edit().remove("workspace_name_$active").apply()
                 buildTools()
             })
+    }
+
+    private fun openMediaPicker(mime: String, title: String) {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = mime
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try { startActivity(Intent.createChooser(intent, title)) }
+        catch (_: Exception) { toast("No compatible media picker is available") }
+    }
+
+    private fun configureScreenLock(method: String) {
+        getSharedPreferences("mt_gnome_security", MODE_PRIVATE).edit()
+            .putString("preferred_lock_method", method).apply()
+        val keyguard = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+        val message = if (keyguard.isDeviceSecure) {
+            "Android already has a secure screen lock. To change it to $method, open Android Security settings and follow its screen-lock change flow. Android may ask for your current credential first."
+        } else {
+            "Next, Android will open its trusted screen-lock setup. Choose $method there and complete the setup. MT-GNOME does not see or store your credential."
+        }
+        AlertDialog.Builder(this).setTitle("Set up $method")
+            .setMessage(message)
+            .setPositiveButton("Open Android security") { _, _ ->
+                openSettings(Settings.ACTION_SECURITY_SETTINGS)
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun lockDevice() {
+        val keyguard = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+        if (!keyguard.isDeviceSecure) {
+            AlertDialog.Builder(this).setTitle("Set a secure screen lock first")
+                .setMessage("Choose a PIN, pattern or password in Android Security settings before using device lock. This protects your device with Android's real lock screen.")
+                .setPositiveButton("Set up") { _, _ -> openSettings(Settings.ACTION_SECURITY_SETTINGS) }
+                .setNegativeButton("Cancel", null).show()
+            return
+        }
+        val manager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val admin = ComponentName(this, MTGNOMEDeviceAdminReceiver::class.java)
+        if (manager.isAdminActive(admin)) {
+            try { manager.lockNow() } catch (_: SecurityException) { toast("Android denied the lock request") }
+            return
+        }
+        val request = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
+            putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "Allows the Lock device button in MT-GNOME to invoke Android's normal secure lock screen. It does not read your credential.")
+        }
+        try { startActivityForResult(request, REQUEST_DEVICE_ADMIN) }
+        catch (_: Exception) { toast("Could not open Android device-admin activation") }
+    }
+
+    @Deprecated("Android activity result compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_DEVICE_ADMIN) {
+            val manager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val admin = ComponentName(this, MTGNOMEDeviceAdminReceiver::class.java)
+            if (manager.isAdminActive(admin)) {
+                try { manager.lockNow() } catch (_: SecurityException) { toast("Android denied the lock request") }
+            } else toast("Device lock permission was not enabled")
+        }
     }
 
     private fun openExternal(intent: Intent) {
@@ -424,5 +511,7 @@ class DesktopToolsActivity : Activity() {
     }
 
     private fun toast(value: String) = android.widget.Toast.makeText(this, value, android.widget.Toast.LENGTH_SHORT).show()
+    companion object { private const val REQUEST_DEVICE_ADMIN = 4208 }
+
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
