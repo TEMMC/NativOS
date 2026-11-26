@@ -73,11 +73,12 @@ class DesktopToolsActivity : Activity() {
         })
         refreshMonitor()
 
-        section("Security & lock screen", "Choose the screen-lock style in Android's trusted setup. MT-GNOME never stores your PIN, pattern or password.")
-        row(button("Choose PIN") { configureScreenLock("PIN") },
-            button("Choose pattern") { configureScreenLock("pattern") },
-            button("Choose password") { configureScreenLock("password") })
-        row(button("Lock device now") { lockDevice() },
+        section("Security & lock screen", "Default: no password. MT-GNOME does not require a PIN, pattern or password. You can optionally add an Android screen lock at any time; credentials stay with Android.")
+        row(button("No password · default") { configureNoScreenLock() },
+            button("Choose PIN") { configureScreenLock("PIN") },
+            button("Choose pattern") { configureScreenLock("pattern") })
+        row(button("Choose password") { configureScreenLock("password") },
+            button("Lock device now") { lockDevice() },
             button("Screen lock settings") { openSettings(Settings.ACTION_SECURITY_SETTINGS) })
 
         section("Photos, video & camera", "Open Android's photo and video pickers or launch the camera. Media stays under Android's permission and picker controls.")
@@ -188,6 +189,17 @@ class DesktopToolsActivity : Activity() {
         catch (_: Exception) { toast("No compatible media picker is available") }
     }
 
+    private fun configureNoScreenLock() {
+        getSharedPreferences("mt_gnome_security", MODE_PRIVATE).edit()
+            .putString("preferred_lock_method", "none").apply()
+        AlertDialog.Builder(this).setTitle("No password · default")
+            .setMessage("MT-GNOME itself has no password by default. If this phone already has a PIN, pattern or password, Android must verify the current credential before you can change the phone's screen lock to None. Open Android Security settings to review that setting.")
+            .setPositiveButton("Open Android security") { _, _ ->
+                openSettings(Settings.ACTION_SECURITY_SETTINGS)
+            }
+            .setNegativeButton("Keep current setting", null).show()
+    }
+
     private fun configureScreenLock(method: String) {
         getSharedPreferences("mt_gnome_security", MODE_PRIVATE).edit()
             .putString("preferred_lock_method", method).apply()
@@ -206,14 +218,8 @@ class DesktopToolsActivity : Activity() {
     }
 
     private fun lockDevice() {
-        val keyguard = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
-        if (!keyguard.isDeviceSecure) {
-            AlertDialog.Builder(this).setTitle("Set a secure screen lock first")
-                .setMessage("Choose a PIN, pattern or password in Android Security settings before using device lock. This protects your device with Android's real lock screen.")
-                .setPositiveButton("Set up") { _, _ -> openSettings(Settings.ACTION_SECURITY_SETTINGS) }
-                .setNegativeButton("Cancel", null).show()
-            return
-        }
+        // A secure credential is optional. With Android's screen lock set to None,
+        // lockNow returns to the swipe or unsecured keyguard.
         val manager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(this, MTGNOMEDeviceAdminReceiver::class.java)
         if (manager.isAdminActive(admin)) {
@@ -223,7 +229,7 @@ class DesktopToolsActivity : Activity() {
         val request = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
             putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
             putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Allows the Lock device button in MT-GNOME to invoke Android's normal secure lock screen. It does not read your credential.")
+                "Allows the Lock device button in MT-GNOME to show Android's lock screen. A PIN, pattern or password is optional and is never read by MT-GNOME.")
         }
         try { startActivityForResult(request, REQUEST_DEVICE_ADMIN) }
         catch (_: Exception) { toast("Could not open Android device-admin activation") }
