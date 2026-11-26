@@ -11,6 +11,19 @@
         android:theme="@style/Theme.MTGnome"
         android:supportsRtl="true"
         android:resizeableActivity="true">
+        <receiver
+            android:name=".MTGNOMEDeviceAdminReceiver"
+            android:label="MT-GNOME device lock"
+            android:description="@string/device_admin_description"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/mt_gnome_device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
         <service android:name=".DesktopDockService" android:exported="false" />
         <service android:name=".PointerOverlayService" android:exported="false" />
         <service
