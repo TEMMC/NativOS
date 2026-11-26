@@ -830,20 +830,26 @@ class GnomeHomeActivity : Activity() {
             item("Logical resolution","Android display size; physical panel is unchanged") { showResolutionSettings() }
         }
         navItem("Applications") {
-            page("Application visibility","Choose which app ecosystems appear on the desktop and in the Applications menu. Both are enabled by default.")
-            item(if (prefs.getBoolean("show_android_apps", true)) "●  Android apps — SHOW" else "○  Android apps — HIDE",
-                "Show or hide all installed Android app shortcuts. This does not uninstall or disable apps.") {
-                val enabled = !prefs.getBoolean("show_android_apps", true)
-                prefs.edit().putBoolean("show_android_apps", enabled).apply()
-                buildDesktop(); page("Application visibility","Choose which app ecosystems appear on the desktop and in the Applications menu. Both are enabled by default.")
-                item(if (enabled) "●  Android apps — SHOW" else "○  Android apps — HIDE", "Tap to change Android app visibility.") { toggleAppVisibility("show_android_apps") }
-                item(if (prefs.getBoolean("show_linux_apps", true)) "●  Linux apps — SHOW" else "○  Linux apps — HIDE", "Tap to change Linux app visibility.") { toggleAppVisibility("show_linux_apps") }
-                toast(if (enabled) "Android apps shown" else "Android apps hidden")
+            fun renderVisibility() {
+                page("Application visibility","Choose which app ecosystems appear on the desktop and in the Applications menu. Both are enabled by default.")
+                item(if (prefs.getBoolean("show_android_apps", true)) "●  Android apps — SHOW" else "○  Android apps — HIDE",
+                    "Show or hide installed Android app shortcuts. This does not uninstall or disable apps.") {
+                    toggleAppVisibility("show_android_apps")
+                    renderVisibility()
+                }
+                item(if (prefs.getBoolean("show_linux_apps", true)) "●  Linux apps — SHOW" else "○  Linux apps — HIDE",
+                    "Show or hide installed Linux desktop applications. This does not uninstall Linux packages.") {
+                    toggleAppVisibility("show_linux_apps")
+                    renderVisibility()
+                }
+                item("Show both app types", "Restore the complete desktop app view") {
+                    prefs.edit().putBoolean("show_android_apps", true).putBoolean("show_linux_apps", true).apply()
+                    buildDesktop()
+                    renderVisibility()
+                    toast("Android and Linux apps shown")
+                }
             }
-            item(if (prefs.getBoolean("show_linux_apps", true)) "●  Linux apps — SHOW" else "○  Linux apps — HIDE",
-                "Show or hide installed Linux .desktop applications. This does not uninstall Linux packages.") {
-                toggleAppVisibility("show_linux_apps")
-            }
+            renderVisibility()
         }
         navItem("System & Security") {
             page("System & Security","Root access, Android permissions and optional command-line utilities")
@@ -1077,19 +1083,126 @@ class GnomeHomeActivity : Activity() {
         } else {
             if (enabled) "Linux apps shown" else "Linux apps hidden"
         })
-        showAppearance()
     }
 
     private fun checkBusyBox() {
         Thread {
-            val result = RootWindowBridge(this).runRoot(
-                "B=\\$(command -v busybox 2>/dev/null); " +
-                    "if [ -n \\\"\\$B\\\" ]; then echo \\\"Found: \\$B\\\"; \\\"\\$B\\\" | head -n 1; \\\"\\$B\\\" true && echo 'BusyBox execution: OK'; " +
-                    "else echo 'BusyBox was not found in the root shell PATH.'; fi"
-            )
+            val dollar = '    private fun updateRootStatus() {
+        Thread {
+            val output = RootWindowBridge(this).runRoot("id")
+            runOnUiThread {
+                if (::rootStatus.isInitialized) {
+                    val ok = output.contains("uid=0")
+                    rootStatus.text = if (ok) "●  ROOT ACCESS AVAILABLE" else "○  ROOT ACCESS NOT AUTHORISED"
+                    rootStatus.setTextColor(if (ok) Color.rgb(117, 224, 184) else muted)
+                }
+            }
+        }.start()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun updateResolution() {
+        if (!::resolution.isInitialized) return
+        val size = Point()
+        windowManager.defaultDisplay.getRealSize(size)
+        resolution.text = "${size.x} × ${size.y}  ⚙"
+        resolution.contentDescription = "Current logical resolution. Tap to change."
+        resolution.setOnClickListener { showResolutionSettings() }
+    }
+
+    private fun updateClock() { if (::clock.isInitialized) clock.text = now() }
+    private fun now() = SimpleDateFormat("EEE  d MMM  •  HH:mm", Locale.getDefault()).format(Date())
+
+    private fun addDockButton(dock: LinearLayout, glyph: String, caption: String, action: () -> Unit) {
+        val horizontal = dock.orientation == LinearLayout.HORIZONTAL
+        val item = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(3), dp(5), dp(3), dp(5))
+            setOnClickListener { action() }
+            isClickable = true
+            background = rounded(themeColors()[2], 12)
+            contentDescription = caption
+        }
+        item.addView(label(glyph, 22, themeColors()[1], true).apply { gravity = Gravity.CENTER })
+        item.addView(label(caption, 8, themeColors()[3], true).apply { gravity = Gravity.CENTER })
+        val lp = if (horizontal) LinearLayout.LayoutParams(0, -1, 1f)
+            else LinearLayout.LayoutParams(-1, dp(58))
+        if (horizontal) lp.setMargins(dp(3), 0, dp(3), 0) else lp.bottomMargin = dp(8)
+        dock.addView(item, lp)
+    }
+
+    private fun label(value: String, size: Int, color: Int, bold: Boolean = false) =
+        TextView(this).apply {
+            text = value
+            textSize = size.toFloat()
+            setTextColor(color)
+            if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        }
+
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radius).toFloat()
+        setStroke(dp(1), Color.argb(35, 220, 220, 255))
+    }
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    private fun toast(value: String) = Toast.makeText(this, value, Toast.LENGTH_SHORT).show()
+}
+
+private class RootWindowBridge(private val activity: Activity) {
+    fun launchFreeformComponent(component: String, fallback: () -> Unit) {
+        Thread {
+            val command = "settings put global enable_freeform_support 1 && " +
+                "settings put global force_resizable_activities 1 && " +
+                "am start --windowingMode 5 -n " + shellQuote(component)
+            val result = runRoot(command)
+            val launched = result.contains("Starting:") && !result.contains("Error:") &&
+                !result.contains("Exception") && result.contains("exit=0")
+            activity.runOnUiThread {
+                if (!launched) {
+                    Toast.makeText(activity, "Freeform blocked or root not approved. Opening normally.", Toast.LENGTH_LONG).show()
+                    fallback()
+                }
+            }
+        }.start()
+    }
+
+    fun launchFreeform(info: ResolveInfo, fallback: () -> Unit) {
+        val component = info.activityInfo.packageName + "/" + info.activityInfo.name
+        Thread {
+            val command = "settings put global enable_freeform_support 1 && " +
+                "settings put global force_resizable_activities 1 && " +
+                "am start --windowingMode 5 -n " + shellQuote(component)
+            val result = runRoot(command)
+            val launched = result.contains("Starting:") && !result.contains("Error:") &&
+                !result.contains("Exception") && result.contains("exit=0")
+            activity.runOnUiThread {
+                if (launched) Toast.makeText(activity, "Opening in a floating window", Toast.LENGTH_SHORT).show()
+                else {
+                    Toast.makeText(activity, "Freeform blocked or root not approved. Opening normally.", Toast.LENGTH_LONG).show()
+                    fallback()
+                }
+            }
+        }.start()
+    }
+    fun runRoot(command: String): String = try {
+        val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+        val output = process.inputStream.bufferedReader().readText()
+        val errors = process.errorStream.bufferedReader().readText()
+        val exitCode = process.waitFor()
+        output + "\n" + errors + "\nexit=" + exitCode
+    } catch (error: Exception) { error.toString() }
+    private fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+}
+
+            val command = "B=" + dollar + "(command -v busybox 2>/dev/null); " +
+                "if [ -n \"" + dollar + "B\" ]; then echo \"Found: " + dollar + "B\"; " +
+                "\"" + dollar + "B\" | head -n 1; \"" + dollar + "B\" true && echo 'BusyBox execution: OK'; " +
+                "else echo 'BusyBox was not found in the root shell PATH.'; fi"
+            val result = RootWindowBridge(this).runRoot(command)
             runOnUiThread {
                 AlertDialog.Builder(this).setTitle("Magisk BusyBox check")
-                    .setMessage(result.take(2400) + "\\n\\nBusyBox supplies common shell utilities. MT-GNOME keeps Linux app launches in a private mount namespace with a separate devpts instance; BusyBox is not a security boundary and does not remove the need for isolation.")
+                    .setMessage(result.take(2400) + "\n\nBusyBox supplies common shell utilities. MT-GNOME keeps Linux app launches in a private mount namespace with a separate devpts instance; BusyBox is not a security boundary and does not remove the need for isolation.")
                     .setPositiveButton("OK", null).show()
             }
         }.apply { isDaemon = true; name = "MT-GNOME-BusyBoxCheck"; start() }
