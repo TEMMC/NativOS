@@ -161,11 +161,14 @@ class GnomeHomeActivity : Activity() {
                 setOnClickListener { launchApp(info) }
                 contentDescription = info.loadLabel(packageManager).toString()
             }
+            val iconSize = prefs.getInt("desktop_icon_size",34).coerceIn(28,56)
             item.addView(ImageView(this).apply { setImageDrawable(info.loadIcon(packageManager)); scaleType=ImageView.ScaleType.FIT_CENTER },
-                LinearLayout.LayoutParams(dp(34),dp(34)))
-            item.addView(label(info.loadLabel(packageManager).toString(),8,Color.WHITE,true).apply {
-                gravity=Gravity.CENTER; maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
-            }, LinearLayout.LayoutParams(dp(54),dp(16)))
+                LinearLayout.LayoutParams(dp(iconSize),dp(iconSize)))
+            if (prefs.getBoolean("desktop_icon_labels",true)) {
+                item.addView(label(info.loadLabel(packageManager).toString(),8,Color.WHITE,true).apply {
+                    gravity=Gravity.CENTER; maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
+                }, LinearLayout.LayoutParams(dp(64),dp(18)))
+            }
             list.addView(item, LinearLayout.LayoutParams(dp(56),dp(58)))
         }
         val scroll = ScrollView(this).apply { overScrollMode=View.OVER_SCROLL_NEVER }
@@ -569,8 +572,22 @@ class GnomeHomeActivity : Activity() {
             item("Default distribution",prefs.getString("active_distro","Select when opening") ?: "Select when opening") { toast("Choose the active distribution in DISTROS") }
         }
         navItem("Display") {
-            page("Display","Screen configuration")
+            page("Display","Screen configuration and desktop layout")
             item("Orientation",prefs.getString("orientation","landscape") ?: "landscape") { showOrientationSettings() }
+            item("Desktop icon size","Current: ${prefs.getInt("desktop_icon_size",34)} dp · changes app icons on the desktop") {
+                val sizes = intArrayOf(28, 34, 40, 48, 56)
+                val current = sizes.indexOf(prefs.getInt("desktop_icon_size",34)).coerceAtLeast(0)
+                AlertDialog.Builder(this).setTitle("Desktop icon size")
+                    .setSingleChoiceItems(sizes.map { "$it dp" }.toTypedArray(), current) { d, i ->
+                        prefs.edit().putInt("desktop_icon_size", sizes[i]).apply()
+                        d.dismiss(); buildDesktop(); toast("Desktop icon size updated")
+                    }.setNegativeButton("Cancel", null).show()
+            }
+            item("Desktop icon labels",if (prefs.getBoolean("desktop_icon_labels",true)) "Labels are visible" else "Labels are hidden") {
+                val visible = !prefs.getBoolean("desktop_icon_labels",true)
+                prefs.edit().putBoolean("desktop_icon_labels",visible).apply()
+                buildDesktop(); toast(if (visible) "Desktop labels shown" else "Desktop labels hidden")
+            }
             item("Logical resolution","Android display size; physical panel is unchanged") { showResolutionSettings() }
         }
         navItem("System & Security") {

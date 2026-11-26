@@ -394,7 +394,17 @@ class TerminalActivity : Activity() {
             }
             card.addView(TextView(this).apply { text = "${d.name}   ·   $state"; textSize = 14f
                 setTextColor(if (installed || d.id == "alpine") Color.rgb(111, 220, 170) else Color.WHITE); typeface = Typeface.DEFAULT_BOLD })
-            card.addView(TextView(this).apply { text = "${d.summary}\nPackage manager: ${d.manager}"; textSize = 11f; setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, 0) })
+            card.addView(TextView(this).apply { text = "${d.summary}\nPackage manager: ${d.manager}"; textSize = 11f; setTextColor(Color.LTGRAY); setPadding(0, dp(4), 0, dp(8)) })
+            if (installed) {
+                val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+                val installButton = btn("Install terminal") { installTerminalForDistro(d) }
+                val openButton = btn("Open") { select(d.id) }
+                actions.addView(installButton, LinearLayout.LayoutParams(0, dp(38), 1f).apply { rightMargin = dp(6) })
+                actions.addView(openButton, LinearLayout.LayoutParams(0, dp(38), 1f))
+                card.addView(actions)
+            } else {
+                card.setOnClickListener { if (d.id == "alpine") confirmAlpine() else confirmLxc(d) }
+            }
             list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         }
         inner.addView(list); panel.addView(inner, LinearLayout.LayoutParams(-1, dp(365)))
@@ -527,6 +537,31 @@ class TerminalActivity : Activity() {
         val md = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { s -> val b = ByteArray(65536); while (true) { val n = s.read(b); if (n < 0) break; md.update(b, 0, n) } }
         return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun installTerminalForDistro(d: Distro) {
+        val command = when (d.manager) {
+            "apk" -> "apk update && apk add bash ncurses-terminfo"
+            "apt" -> "apt-get update && apt-get install -y bash ncurses-term"
+            "pacman" -> "pacman -Sy --noconfirm bash ncurses"
+            "dnf" -> "dnf install -y bash ncurses"
+            "xbps" -> "xbps-install -Sy bash ncurses"
+            "zypper" -> "zypper --non-interactive refresh && zypper --non-interactive install bash ncurses"
+            "opkg" -> "opkg update && opkg install bash"
+            "nix" -> "nix-env -iA nixpkgs.bash nixpkgs.ncurses"
+            "emerge" -> "emerge --sync && emerge --ask=n bash ncurses"
+            else -> "echo 'No terminal setup recipe is available for this distribution.'"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Install terminal for ${d.name}?")
+            .setMessage("This installs Bash and terminal colour/key support inside the existing Linux distribution. It does not download the distribution again. An internet connection is required.")
+            .setPositiveButton("Install terminal") { _, _ ->
+                active = d.id
+                prefs.edit().putString("active_distro", d.id).apply()
+                startSession(d.id, "$command; if command -v bash >/dev/null 2>&1; then exec bash -l; else echo 'Terminal setup did not complete. Check the package manager output and retry.'; fi")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun select(id: String) {
