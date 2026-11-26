@@ -54,6 +54,5 @@ dependencies {
     // Embedded Wayland compositor and the same shared Android-hosted graphics transport.
     implementation(project(":wayland-runtime"))
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("com.termux.termux-app:terminal-view:0.118.0")
     implementation("org.tukaani:xz:1.10")
 }
