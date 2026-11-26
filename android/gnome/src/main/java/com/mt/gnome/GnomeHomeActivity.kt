@@ -1087,7 +1087,21 @@ class GnomeHomeActivity : Activity() {
 
     private fun checkBusyBox() {
         Thread {
-            val dollar = '    private fun updateRootStatus() {
+            val dollar = 36.toChar()
+            val command = "B=" + dollar + "(command -v busybox 2>/dev/null); " +
+                "if [ -n \"" + dollar + "B\" ]; then echo \"Found: " + dollar + "B\"; " +
+                "\"" + dollar + "B\" | head -n 1; \"" + dollar + "B\" true && echo 'BusyBox execution: OK'; " +
+                "else echo 'BusyBox was not found in the root shell PATH.'; fi"
+            val result = RootWindowBridge(this).runRoot(command)
+            runOnUiThread {
+                AlertDialog.Builder(this).setTitle("Magisk BusyBox check")
+                    .setMessage(result.take(2400) + "\n\nBusyBox supplies common shell utilities. MT-GNOME keeps Linux app launches in a private mount namespace with a separate devpts instance; BusyBox is not a security boundary and does not remove the need for isolation.")
+                    .setPositiveButton("OK", null).show()
+            }
+        }.apply { isDaemon = true; name = "MT-GNOME-BusyBoxCheck"; start() }
+    }
+
+    private fun updateRootStatus() {
         Thread {
             val output = RootWindowBridge(this).runRoot("id")
             runOnUiThread {
