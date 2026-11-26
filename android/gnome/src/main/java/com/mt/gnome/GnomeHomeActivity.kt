@@ -1089,7 +1089,7 @@ class GnomeHomeActivity : Activity() {
         Thread {
             val dollar = 36.toChar()
             val command = "B=" + dollar + "(command -v busybox 2>/dev/null); " +
-                "if [ -z \"" + dollar + "B\" ]; then for C in /system/xbin/busybox /system/bin/busybox /data/adb/modules/*/system/xbin/busybox /data/adb/modules/*/system/bin/busybox; do [ -x \"$C\" ] && B=\"$C\" && break; done; fi; " +
+                "if [ -z \"" + dollar + "B\" ]; then for C in /system/xbin/busybox /system/bin/busybox /data/adb/modules/*/system/xbin/busybox /data/adb/modules/*/system/bin/busybox; do [ -x \"" + dollar + "C\" ] && B=\"" + dollar + "C\" && break; done; fi; " +
                 "if [ -n \"" + dollar + "B\" ]; then echo \"Found: " + dollar + "B\"; " +
                 "\"" + dollar + "B\" | head -n 1; \"" + dollar + "B\" true && echo 'BusyBox execution: OK'; " +
                 "else echo 'BusyBox was not found in the root shell PATH.'; fi"
