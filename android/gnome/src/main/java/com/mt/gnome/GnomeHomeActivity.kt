@@ -230,8 +230,8 @@ class GnomeHomeActivity : Activity() {
         data class DockEntry(val id: String, val glyph: String, val caption: String, val action: () -> Unit)
         val dockItems = listOf(
             DockEntry("terminal", "⌘", "Terminal") { openTerminalWindow() },
-            DockEntry("files", "▤", "Files") { startActivity(Intent(this, FileManagerActivity::class.java)) },
-            DockEntry("tools", "▣", "Tools") { startActivity(Intent(this, DesktopToolsActivity::class.java)) },
+            DockEntry("files", "▤", "Files") { openInternalWindow(FileManagerActivity::class.java) },
+            DockEntry("tools", "▣", "Tools") { openInternalWindow(DesktopToolsActivity::class.java) },
             DockEntry("workspaces", "▦", "Spaces") { showWorkspaceSwitcher() },
             DockEntry("customize", "✎", "Customize") { showDesktopCustomizer() }
         )
@@ -343,7 +343,7 @@ class GnomeHomeActivity : Activity() {
             when (which) {
                 0 -> showApplicationDrawer()
                 1 -> openTerminalWindow()
-                2 -> startActivity(Intent(this, FileManagerActivity::class.java))
+                2 -> openInternalWindow(FileManagerActivity::class.java)
                 3 -> showDesktopCustomizer()
                 4 -> refreshLinuxApps()
                 5 -> showWorkspaceSwitcher()
@@ -704,10 +704,38 @@ class GnomeHomeActivity : Activity() {
             (resources.displayMetrics.heightPixels * .86f).toInt())
     }
 
+    @Suppress("DEPRECATION")
     private fun loadApps() {
+        val flags = android.content.pm.PackageManager.MATCH_ALL
         val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        apps = packageManager.queryIntentActivities(query, 0)
-            .filter { it.activityInfo.packageName != packageName }
+        val discovered = packageManager.queryIntentActivities(query, flags).toMutableList()
+        val represented = discovered.mapNotNull { it.activityInfo?.packageName }.toMutableSet()
+
+        // Samsung and other OEM apps are not always returned by the launcher-intent query.
+        // Enumerate every installed package as well, then create a display entry when its
+        // launcher activity is hidden or absent. Such entries remain visible in the drawer.
+        val installed = try { packageManager.getInstalledApplications(flags) } catch (_: Exception) { emptyList() }
+        installed.forEach { appInfo ->
+            val pkg = appInfo.packageName ?: return@forEach
+            if (pkg == packageName || represented.contains(pkg)) return@forEach
+            val launchIntent = try { packageManager.getLaunchIntentForPackage(pkg) } catch (_: Exception) { null }
+            val resolved = launchIntent?.let {
+                try { packageManager.resolveActivity(it, flags) } catch (_: Exception) { null }
+            }
+            val entry = resolved?.takeIf { it.activityInfo != null } ?: ResolveInfo().apply {
+                activityInfo = ActivityInfo().apply {
+                    applicationInfo = appInfo
+                    packageName = pkg
+                    name = appInfo.className ?: ""
+                    enabled = appInfo.enabled
+                }
+            }
+            discovered.add(entry)
+            represented.add(pkg)
+        }
+        apps = discovered
+            .filter { it.activityInfo?.packageName != packageName }
+            .distinctBy { it.activityInfo?.packageName + "/" + it.activityInfo?.name }
             .sortedBy { it.loadLabel(packageManager).toString().lowercase(Locale.getDefault()) }
         buildDesktop()
     }
@@ -718,19 +746,38 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun launchApp(info: ResolveInfo) {
-        RootWindowBridge(this).launchFreeform(info) {
-            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                .setClassName(info.activityInfo.packageName, info.activityInfo.name)
-            try { startActivity(intent) } catch (_: Exception) { toast("Unable to launch application") }
+        val pkg = info.activityInfo?.packageName ?: return
+        val launchIntent = try { packageManager.getLaunchIntentForPackage(pkg) } catch (_: Exception) { null }
+        if (launchIntent == null) {
+            toast("This installed package has no launchable activity. Opening its app details.")
+            try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))) }
+            catch (_: Exception) { toast("Android does not expose a launch activity for $pkg") }
+            return
+        }
+        val component = launchIntent.component?.flattenToString()
+            ?: packageManager.resolveActivity(launchIntent, android.content.pm.PackageManager.MATCH_ALL)
+                ?.activityInfo?.let { "${it.packageName}/${it.name}" }
+        if (component.isNullOrBlank()) {
+            try { startActivity(launchIntent) } catch (_: Exception) { toast("Unable to launch $pkg") }
+            return
+        }
+        val orientation = prefs.getString("orientation", "landscape") ?: "landscape"
+        RootWindowBridge(this).launchFreeformComponent(component, orientation) {
+            try { startActivity(launchIntent) } catch (_: Exception) { toast("Unable to launch $pkg") }
+        }
+    }
+
+    private fun openInternalWindow(activityClass: Class<out Activity>) {
+        val intent = Intent(this, activityClass)
+        val component = "$packageName/${activityClass.name}"
+        val orientation = prefs.getString("orientation", "landscape") ?: "landscape"
+        RootWindowBridge(this).launchFreeformComponent(component, orientation) {
+            try { startActivity(intent) } catch (_: Exception) { toast("Could not open ${activityClass.simpleName}") }
         }
     }
 
     private fun openTerminalWindow() {
-        try {
-            startActivity(Intent(this, DistroCatalogActivity::class.java))
-        } catch (e: Exception) {
-            toast("Could not open the Linux distribution catalogue: ${e.message}")
-        }
+        openInternalWindow(DistroCatalogActivity::class.java)
     }
 
     private fun focusSearch() {
@@ -1017,7 +1064,7 @@ class GnomeHomeActivity : Activity() {
                 }.setNegativeButton("Cancel",null).show()
             }
             item("Desktop utilities","Open system monitor, file access, workspaces and quick settings") {
-                startActivity(Intent(this, DesktopToolsActivity::class.java))
+                openInternalWindow(DesktopToolsActivity::class.java)
             }
         }
         navItem("Windows") {
@@ -1294,11 +1341,19 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun applyOrientationPreference() {
-        requestedOrientation = when (prefs.getString("orientation", "landscape")) {
+        val selected = prefs.getString("orientation", "landscape")
+        requestedOrientation = when (selected) {
             "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             "system" -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
+        // Keep the device rotation aligned when an external app is launched in freeform.
+        Thread {
+            val rotation = when (selected) { "portrait" -> 0; "landscape" -> 1; else -> -1 }
+            val command = if (rotation < 0) "settings put system accelerometer_rotation 1"
+                else "settings put system accelerometer_rotation 0 && settings put system user_rotation $rotation"
+            RootWindowBridge(this).runRoot(command)
+        }.apply { isDaemon = true; name = "MT-GNOME-Orientation"; start() }
     }
 
     private fun toggleAppVisibility(key: String) {
@@ -1392,41 +1447,30 @@ class GnomeHomeActivity : Activity() {
 }
 
 private class RootWindowBridge(private val activity: Activity) {
-    fun launchFreeformComponent(component: String, fallback: () -> Unit) {
+    fun launchFreeformComponent(component: String, orientation: String, fallback: () -> Unit) {
         Thread {
+            val rotationCommand = when (orientation) {
+                "portrait" -> "settings put system accelerometer_rotation 0 && settings put system user_rotation 0"
+                "system" -> "settings put system accelerometer_rotation 1"
+                else -> "settings put system accelerometer_rotation 0 && settings put system user_rotation 1"
+            }
             val command = "settings put global enable_freeform_support 1 && " +
                 "settings put global force_resizable_activities 1 && " +
-                "am start --windowingMode 5 -n " + shellQuote(component)
+                rotationCommand + " && am start --windowingMode 5 -n " + shellQuote(component)
             val result = runRoot(command)
             val launched = result.contains("Starting:") && !result.contains("Error:") &&
                 !result.contains("Exception") && result.contains("exit=0")
             activity.runOnUiThread {
-                if (!launched) {
-                    Toast.makeText(activity, "Freeform blocked or root not approved. Opening normally.", Toast.LENGTH_LONG).show()
+                if (launched) {
+                    Toast.makeText(activity, "Opened in a desktop window", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(activity, "Freeform was blocked; opening normally", Toast.LENGTH_LONG).show()
                     fallback()
                 }
             }
-        }.start()
+        }.apply { isDaemon = true; name = "MT-GNOME-FreeformLaunch"; start() }
     }
 
-    fun launchFreeform(info: ResolveInfo, fallback: () -> Unit) {
-        val component = info.activityInfo.packageName + "/" + info.activityInfo.name
-        Thread {
-            val command = "settings put global enable_freeform_support 1 && " +
-                "settings put global force_resizable_activities 1 && " +
-                "am start --windowingMode 5 -n " + shellQuote(component)
-            val result = runRoot(command)
-            val launched = result.contains("Starting:") && !result.contains("Error:") &&
-                !result.contains("Exception") && result.contains("exit=0")
-            activity.runOnUiThread {
-                if (launched) Toast.makeText(activity, "Opening in a floating window", Toast.LENGTH_SHORT).show()
-                else {
-                    Toast.makeText(activity, "Freeform blocked or root not approved. Opening normally.", Toast.LENGTH_LONG).show()
-                    fallback()
-                }
-            }
-        }.start()
-    }
     fun runRoot(command: String): String = try {
         val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
         val output = process.inputStream.bufferedReader().readText()
@@ -1434,126 +1478,6 @@ private class RootWindowBridge(private val activity: Activity) {
         val exitCode = process.waitFor()
         output + "\n" + errors + "\nexit=" + exitCode
     } catch (error: Exception) { error.toString() }
-    private fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
-}
 
-            val command = "B=" + dollar + "(command -v busybox 2>/dev/null); " +
-                "if [ -n \"" + dollar + "B\" ]; then echo \"Found: " + dollar + "B\"; " +
-                "\"" + dollar + "B\" | head -n 1; \"" + dollar + "B\" true && echo 'BusyBox execution: OK'; " +
-                "else echo 'BusyBox was not found in the root shell PATH.'; fi"
-            val result = RootWindowBridge(this).runRoot(command)
-            runOnUiThread {
-                AlertDialog.Builder(this).setTitle("Magisk BusyBox check")
-                    .setMessage(result.take(2400) + "\n\nBusyBox supplies common shell utilities. MT-GNOME keeps Linux app launches in a private mount namespace with a separate devpts instance; BusyBox is not a security boundary and does not remove the need for isolation.")
-                    .setPositiveButton("OK", null).show()
-            }
-        }.apply { isDaemon = true; name = "MT-GNOME-BusyBoxCheck"; start() }
-    }
-
-    private fun updateRootStatus() {
-        Thread {
-            val output = RootWindowBridge(this).runRoot("id")
-            runOnUiThread {
-                if (::rootStatus.isInitialized) {
-                    val ok = output.contains("uid=0")
-                    rootStatus.text = if (ok) "●  ROOT ACCESS AVAILABLE" else "○  ROOT ACCESS NOT AUTHORISED"
-                    rootStatus.setTextColor(if (ok) Color.rgb(117, 224, 184) else muted)
-                }
-            }
-        }.start()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun updateResolution() {
-        if (!::resolution.isInitialized) return
-        val size = Point()
-        windowManager.defaultDisplay.getRealSize(size)
-        resolution.text = "${size.x} × ${size.y}  ⚙"
-        resolution.contentDescription = "Current logical resolution. Tap to change."
-        resolution.setOnClickListener { showResolutionSettings() }
-    }
-
-    private fun updateClock() { if (::clock.isInitialized) clock.text = now() }
-    private fun now() = SimpleDateFormat("EEE  d MMM  •  HH:mm", Locale.getDefault()).format(Date())
-
-    private fun addDockButton(dock: LinearLayout, glyph: String, caption: String, action: () -> Unit) {
-        val horizontal = dock.orientation == LinearLayout.HORIZONTAL
-        val item = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(3), dp(5), dp(3), dp(5))
-            setOnClickListener { action() }
-            isClickable = true
-            background = rounded(themeColors()[2], 12)
-            contentDescription = caption
-        }
-        item.addView(label(glyph, 22, themeColors()[1], true).apply { gravity = Gravity.CENTER })
-        item.addView(label(caption, 8, themeColors()[3], true).apply { gravity = Gravity.CENTER })
-        val lp = if (horizontal) LinearLayout.LayoutParams(0, -1, 1f)
-            else LinearLayout.LayoutParams(-1, dp(58))
-        if (horizontal) lp.setMargins(dp(3), 0, dp(3), 0) else lp.bottomMargin = dp(8)
-        dock.addView(item, lp)
-    }
-
-    private fun label(value: String, size: Int, color: Int, bold: Boolean = false) =
-        TextView(this).apply {
-            text = value
-            textSize = size.toFloat()
-            setTextColor(color)
-            if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        }
-
-    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = dp(radius).toFloat()
-        setStroke(dp(1), Color.argb(35, 220, 220, 255))
-    }
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun toast(value: String) = Toast.makeText(this, value, Toast.LENGTH_SHORT).show()
-}
-
-private class RootWindowBridge(private val activity: Activity) {
-    fun launchFreeformComponent(component: String, fallback: () -> Unit) {
-        Thread {
-            val command = "settings put global enable_freeform_support 1 && " +
-                "settings put global force_resizable_activities 1 && " +
-                "am start --windowingMode 5 -n " + shellQuote(component)
-            val result = runRoot(command)
-            val launched = result.contains("Starting:") && !result.contains("Error:") &&
-                !result.contains("Exception") && result.contains("exit=0")
-            activity.runOnUiThread {
-                if (!launched) {
-                    Toast.makeText(activity, "Freeform blocked or root not approved. Opening normally.", Toast.LENGTH_LONG).show()
-                    fallback()
-                }
-            }
-        }.start()
-    }
-
-    fun launchFreeform(info: ResolveInfo, fallback: () -> Unit) {
-        val component = info.activityInfo.packageName + "/" + info.activityInfo.name
-        Thread {
-            val command = "settings put global enable_freeform_support 1 && " +
-                "settings put global force_resizable_activities 1 && " +
-                "am start --windowingMode 5 -n " + shellQuote(component)
-            val result = runRoot(command)
-            val launched = result.contains("Starting:") && !result.contains("Error:") &&
-                !result.contains("Exception") && result.contains("exit=0")
-            activity.runOnUiThread {
-                if (launched) Toast.makeText(activity, "Opening in a floating window", Toast.LENGTH_SHORT).show()
-                else {
-                    Toast.makeText(activity, "Freeform blocked or root not approved. Opening normally.", Toast.LENGTH_LONG).show()
-                    fallback()
-                }
-            }
-        }.start()
-    }
-    fun runRoot(command: String): String = try {
-        val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
-        val output = process.inputStream.bufferedReader().readText()
-        val errors = process.errorStream.bufferedReader().readText()
-        val exitCode = process.waitFor()
-        output + "\n" + errors + "\nexit=" + exitCode
-    } catch (error: Exception) { error.toString() }
     private fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 }
