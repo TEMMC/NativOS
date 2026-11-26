@@ -196,20 +196,24 @@ class GnomeHomeActivity : Activity() {
             setOnClickListener { showDesktopCustomizer() }
         })
         surface.addView(section)
+        val showAndroidApps = prefs.getBoolean("show_android_apps", true)
+        val showLinuxApps = prefs.getBoolean("show_linux_apps", true)
+        val visibleAndroidCount = if (showAndroidApps) apps.size else 0
+        val visibleLinuxCount = if (showLinuxApps) linuxApps.size else 0
         val info = label(
-            if (linuxScanRunning) "Scanning installed Linux applications…" else
-                "${apps.size} Android apps  •  ${linuxApps.size} Linux apps",
+            if (linuxScanRunning && showLinuxApps) "Scanning installed Linux applications…" else
+                "$visibleAndroidCount Android apps  •  $visibleLinuxCount Linux apps",
             10, Color.LTGRAY
         ).apply { setPadding(0, dp(3), 0, dp(7)) }
         surface.addView(info)
 
         appGrid = GridLayout(this).apply { columnCount = prefs.getInt("desktop_columns", if (resources.configuration.screenWidthDp >= 700) 6 else 4).coerceIn(3, 8) }
         val hidden = prefs.getStringSet("hidden_desktop_shortcuts", emptySet()) ?: emptySet()
-        apps.forEach { app ->
+        if (showAndroidApps) apps.forEach { app ->
             val key = "android:${app.activityInfo.packageName}/${app.activityInfo.name}"
             if (!hidden.contains(key)) addAndroidDesktopIcon(appGrid, app, key)
         }
-        if (prefs.getBoolean("show_linux_shortcuts", true)) linuxApps.forEach { app ->
+        if (showLinuxApps && prefs.getBoolean("show_linux_shortcuts", true)) linuxApps.forEach { app ->
             val key = "linux:${app.distro}:${app.desktopId}"
             if (!hidden.contains(key)) addLinuxDesktopIcon(appGrid, app, key)
         }
@@ -350,10 +354,20 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun showApplicationDrawer() {
-        val rows = (apps.map { it.loadLabel(packageManager).toString() + "  ·  Android" } +
-            linuxApps.map { it.name + "  ·  Linux (" + it.distro + ")" }).toTypedArray()
+        val androidVisible = if (prefs.getBoolean("show_android_apps", true)) apps else emptyList()
+        val linuxVisible = if (prefs.getBoolean("show_linux_apps", true)) linuxApps else emptyList()
+        val rows = (androidVisible.map { it.loadLabel(packageManager).toString() + "  ·  Android" } +
+            linuxVisible.map { it.name + "  ·  Linux (" + it.distro + ")" }).toTypedArray()
+        if (rows.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("Applications")
+                .setMessage("Both Android and Linux app visibility are turned off. Turn one on in Settings → Applications.")
+                .setPositiveButton("Open settings") { _, _ -> showAppearance() }
+                .setNegativeButton("Close", null).show()
+            return
+        }
         AlertDialog.Builder(this).setTitle("Applications").setItems(rows) { _, which ->
-            if (which < apps.size) launchApp(apps[which]) else launchLinuxApp(linuxApps[which - apps.size])
+            if (which < androidVisible.size) launchApp(androidVisible[which])
+            else launchLinuxApp(linuxVisible[which - androidVisible.size])
         }.setPositiveButton("Done", null).show()
     }
 
@@ -815,9 +829,26 @@ class GnomeHomeActivity : Activity() {
             }
             item("Logical resolution","Android display size; physical panel is unchanged") { showResolutionSettings() }
         }
+        navItem("Applications") {
+            page("Application visibility","Choose which app ecosystems appear on the desktop and in the Applications menu. Both are enabled by default.")
+            item(if (prefs.getBoolean("show_android_apps", true)) "●  Android apps — SHOW" else "○  Android apps — HIDE",
+                "Show or hide all installed Android app shortcuts. This does not uninstall or disable apps.") {
+                val enabled = !prefs.getBoolean("show_android_apps", true)
+                prefs.edit().putBoolean("show_android_apps", enabled).apply()
+                buildDesktop(); page("Application visibility","Choose which app ecosystems appear on the desktop and in the Applications menu. Both are enabled by default.")
+                item(if (enabled) "●  Android apps — SHOW" else "○  Android apps — HIDE", "Tap to change Android app visibility.") { toggleAppVisibility("show_android_apps") }
+                item(if (prefs.getBoolean("show_linux_apps", true)) "●  Linux apps — SHOW" else "○  Linux apps — HIDE", "Tap to change Linux app visibility.") { toggleAppVisibility("show_linux_apps") }
+                toast(if (enabled) "Android apps shown" else "Android apps hidden")
+            }
+            item(if (prefs.getBoolean("show_linux_apps", true)) "●  Linux apps — SHOW" else "○  Linux apps — HIDE",
+                "Show or hide installed Linux .desktop applications. This does not uninstall Linux packages.") {
+                toggleAppVisibility("show_linux_apps")
+            }
+        }
         navItem("System & Security") {
-            page("System & Security","App permissions and device integration")
+            page("System & Security","Root access, Android permissions and optional command-line utilities")
             item("Root access","Authorize or verify Magisk integration") { enableLinuxWindows() }
+            item("Magisk BusyBox tools","Check whether the BusyBox binary provided by your Magisk module is available to MT-GNOME. BusyBox is optional; it does not replace the private mount namespace or make unsafe commands safe.") { checkBusyBox() }
             item("Android app permissions","Review permissions in Android settings") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName"))) }
             item("System settings","Open Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }
@@ -1035,6 +1066,33 @@ class GnomeHomeActivity : Activity() {
             "system" -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
+    }
+
+    private fun toggleAppVisibility(key: String) {
+        val enabled = !prefs.getBoolean(key, true)
+        prefs.edit().putBoolean(key, enabled).apply()
+        buildDesktop()
+        toast(if (key == "show_android_apps") {
+            if (enabled) "Android apps shown" else "Android apps hidden"
+        } else {
+            if (enabled) "Linux apps shown" else "Linux apps hidden"
+        })
+        showAppearance()
+    }
+
+    private fun checkBusyBox() {
+        Thread {
+            val result = RootWindowBridge(this).runRoot(
+                "B=\\$(command -v busybox 2>/dev/null); " +
+                    "if [ -n \\\"\\$B\\\" ]; then echo \\\"Found: \\$B\\\"; \\\"\\$B\\\" | head -n 1; \\\"\\$B\\\" true && echo 'BusyBox execution: OK'; " +
+                    "else echo 'BusyBox was not found in the root shell PATH.'; fi"
+            )
+            runOnUiThread {
+                AlertDialog.Builder(this).setTitle("Magisk BusyBox check")
+                    .setMessage(result.take(2400) + "\\n\\nBusyBox supplies common shell utilities. MT-GNOME keeps Linux app launches in a private mount namespace with a separate devpts instance; BusyBox is not a security boundary and does not remove the need for isolation.")
+                    .setPositiveButton("OK", null).show()
+            }
+        }.apply { isDaemon = true; name = "MT-GNOME-BusyBoxCheck"; start() }
     }
 
     private fun updateRootStatus() {
