@@ -86,6 +86,7 @@ class GnomeHomeActivity : Activity() {
             }
         }
         if (::clock.isInitialized) updateClock()
+        if (::desktop.isInitialized) refreshLinuxApps()
         if (::resolution.isInitialized) updateResolution()
         if (::rootStatus.isInitialized) updateRootStatus()
     }
@@ -508,11 +509,23 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun openTerminalWindow() {
-        // TerminalActivity is the single terminal application. It shows the distro
-        // catalogue when no rootfs exists, and opens the remembered/first installed
-        // distribution directly when one is available.
-        val intent = Intent(this, TerminalActivity::class.java)
-        try { startActivity(intent) } catch (_: Exception) { toast("Could not open MT Terminal") }
+        // The terminal activity itself decides: installed rootfs -> shell,
+        // no installed rootfs -> distribution catalogue. Preserve freeform launch.
+        Thread {
+            val result = RootWindowBridge(this).runRoot(
+                "settings put global enable_freeform_support 1; " +
+                    "settings put global force_resizable_activities 1; " +
+                    "am start --windowingMode 5 -n com.mt.gnome/.TerminalActivity"
+            )
+            val started = result.contains("Starting:") && result.contains("exit=0") &&
+                !result.contains("Error:") && !result.contains("Exception")
+            runOnUiThread {
+                if (!started) {
+                    try { startActivity(Intent(this, TerminalActivity::class.java)) }
+                    catch (_: Exception) { toast("Could not open MT Terminal") }
+                }
+            }
+        }.apply { isDaemon = true; start() }
     }
 
     private fun focusSearch() {
