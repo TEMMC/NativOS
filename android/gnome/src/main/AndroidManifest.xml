@@ -2,8 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="true"
@@ -13,14 +11,6 @@
         android:theme="@style/Theme.MTGnome"
         android:supportsRtl="true"
         android:resizeableActivity="true">
-        <service
-            android:name=".FloatingTerminalService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keep the floating Linux terminal available while using other apps." />
-        </service>
         <service android:name=".DesktopDockService" android:exported="false" />
         <service android:name=".PointerOverlayService" android:exported="false" />
         <service
@@ -35,7 +25,7 @@
         </service>
         <activity android:name=".FileManagerActivity" android:exported="false" android:label="MT Files" android:resizeableActivity="true" />
         <activity android:name=".DesktopToolsActivity" android:exported="false" android:label="Desktop Tools" android:resizeableActivity="true" />
-        <activity android:name=".TerminalActivity" android:theme="@style/Theme.MTGnome.TransparentTerminal" android:exported="false" android:label="Terminal" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".DistroCatalogActivity" android:exported="false" android:label="GNOME Terminal catalogue" android:resizeableActivity="true" />
         <activity
             android:name=".GnomeHomeActivity"
             android:exported="true"
