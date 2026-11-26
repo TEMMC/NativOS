@@ -47,7 +47,7 @@ class GnomeHomeActivity : Activity() {
     private var wallpaperName = "Aurora"
     private var activeWorkspace = 1
     private val wallpaperRequest = 4102
-    private data class LinuxDesktopApp(val distro: String, val name: String, val desktopId: String, val exec: String)
+    private data class LinuxDesktopApp(val distro: String, val name: String, val desktopId: String, val exec: String, val categories: String = "")
     private var linuxApps: List<LinuxDesktopApp> = emptyList()
     private var linuxScanRunning = false
     private val distroIds = listOf("alpine", "debian", "ubuntu", "arch", "fedora", "void", "kali", "nixos", "gentoo", "opensuse", "rocky", "openwrt")
@@ -181,45 +181,42 @@ class GnomeHomeActivity : Activity() {
         }
         desktop.addView(top, LinearLayout.LayoutParams(-1, dp(44)))
 
-        // Desktop surface: both Android launchers and installed Linux .desktop entries.
+        // PC-style desktop: only shortcuts explicitly added by the user are placed here.
         val surface = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(10), dp(8), dp(8))
         }
-        val section = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-        }
-        section.addView(label("Desktop", 16, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val section = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        section.addView(label("Workspace", 16, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
         section.addView(Button(this).apply {
-            text = "＋ Add / Customize"; isAllCaps = false; textSize = 10f
+            text = "＋ Add to desktop"; isAllCaps = false; textSize = 10f
             setTextColor(Color.WHITE); background = rounded(Color.argb(175, 36, 48, 68), 9)
-            setOnClickListener { showDesktopCustomizer() }
+            setOnClickListener { showApplicationDrawer() }
         })
         surface.addView(section)
         val showAndroidApps = prefs.getBoolean("show_android_apps", true)
         val showLinuxApps = prefs.getBoolean("show_linux_apps", true)
-        val visibleAndroidCount = if (showAndroidApps) apps.size else 0
-        val visibleLinuxCount = if (showLinuxApps) linuxApps.size else 0
-        val info = label(
-            if (linuxScanRunning && showLinuxApps) "Scanning installed Linux applications…" else
-                "$visibleAndroidCount Android apps  •  $visibleLinuxCount Linux apps",
-            10, Color.LTGRAY
-        ).apply { setPadding(0, dp(3), 0, dp(7)) }
-        surface.addView(info)
-
-        appGrid = GridLayout(this).apply { columnCount = prefs.getInt("desktop_columns", if (resources.configuration.screenWidthDp >= 700) 6 else 4).coerceIn(3, 8) }
+        val shortcuts = prefs.getStringSet("desktop_shortcuts", emptySet()) ?: emptySet()
         val hidden = prefs.getStringSet("hidden_desktop_shortcuts", emptySet()) ?: emptySet()
+        appGrid = GridLayout(this).apply {
+            columnCount = prefs.getInt("desktop_columns", if (resources.configuration.screenWidthDp >= 700) 6 else 4).coerceIn(3, 8)
+        }
         if (showAndroidApps) apps.forEach { app ->
             val key = "android:${app.activityInfo.packageName}/${app.activityInfo.name}"
-            if (!hidden.contains(key)) addAndroidDesktopIcon(appGrid, app, key)
+            if (shortcuts.contains(key) && !hidden.contains(key)) addAndroidDesktopIcon(appGrid, app, key)
         }
         if (showLinuxApps && prefs.getBoolean("show_linux_shortcuts", true)) linuxApps.forEach { app ->
             val key = "linux:${app.distro}:${app.desktopId}"
-            if (!hidden.contains(key)) addLinuxDesktopIcon(appGrid, app, key)
+            if (shortcuts.contains(key) && !hidden.contains(key)) addLinuxDesktopIcon(appGrid, app, key)
         }
-        val scroller = ScrollView(this).apply { overScrollMode = View.OVER_SCROLL_NEVER }
-        scroller.addView(appGrid)
-        surface.addView(scroller, LinearLayout.LayoutParams(-1, 0, 1f))
+        val scroller = ScrollView(this).apply { overScrollMode = View.OVER_SCROLL_NEVER; addView(appGrid) }
+        if (shortcuts.isEmpty()) {
+            surface.addView(label("Your desktop is clean. Open Applications and choose “Add to desktop” to place shortcuts here.",
+                12, Color.WHITE).apply { gravity = Gravity.CENTER; setPadding(dp(20), dp(18), dp(20), dp(18)) })
+        } else {
+            surface.addView(scroller, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+        if (linuxScanRunning && showLinuxApps) surface.addView(label("Discovering Linux applications…", 10, Color.LTGRAY))
         desktop.addView(surface, LinearLayout.LayoutParams(-1, 0, 1f))
 
         // A familiar bottom dock. Each item can be hidden or restored in Customize.
@@ -294,13 +291,14 @@ class GnomeHomeActivity : Activity() {
                 "while IFS= read -r F; do " +
                 "N=\$(awk -F= '/^Name=/{print substr(\$0,index(\$0,\"=\")+1);exit}' \"\$F\"); " +
                 "E=\$(awk -F= '/^Exec=/{print substr(\$0,index(\$0,\"=\")+1);exit}' \"\$F\"); " +
+                "C=\$(awk -F= '/^Categories=/{print substr(\$0,index(\$0,\"=\")+1);exit}' \"\$F\"); " +
                 "H=\$(awk -F= '/^(NoDisplay|Hidden)=/{if(\$2==\"true\") print \"yes\"}' \"\$F\" | head -n1); " +
                 "[ -n \"\$N\" ] && [ -n \"\$E\" ] && [ -z \"\$H\" ] || continue; " +
-                "B=\$(basename \"\$F\" .desktop); printf '%s\\t%s\\t%s\\t%s\\n' \"\$D\" \"\$N\" \"\$B\" \"\$E\"; done; done"
+                "B=\$(basename \"\$F\" .desktop); printf '%s\\t%s\\t%s\\t%s\\t%s\\n' \"\$D\" \"\$N\" \"\$B\" \"\$E\" \"\$C\"; done; done"
             val result = RootWindowBridge(this).runRoot(script)
             val parsed: List<LinuxDesktopApp> = result.lineSequence().mapNotNull { line ->
                 val p = line.split('\t')
-                if (p.size >= 4 && p[1].isNotBlank() && p[2].isNotBlank()) LinuxDesktopApp(p[0], p[1], p[2], p[3]) else null
+                if (p.size >= 4 && p[1].isNotBlank() && p[2].isNotBlank()) LinuxDesktopApp(p[0], p[1], p[2], p[3], p.getOrElse(4) { "" }) else null
             }.distinctBy { it.distro + ":" + it.desktopId }
                 .sortedBy { it.name.lowercase(Locale.getDefault()) }
                 .toList()
@@ -353,22 +351,171 @@ class GnomeHomeActivity : Activity() {
         }.show()
     }
 
+    private data class AppMenuEntry(
+        val name: String, val category: String, val source: String,
+        val key: String, val androidApp: ResolveInfo? = null, val linuxApp: LinuxDesktopApp? = null
+    )
+
+    private fun androidAppCategory(app: ResolveInfo): String {
+        val text = (app.loadLabel(packageManager).toString() + " " + app.activityInfo.packageName).lowercase(Locale.ROOT)
+        return when {
+            listOf("browser", "chrome", "firefox", "internet", "mail", "email", "messag", "telegram", "whatsapp", "signal").any { text.contains(it) } -> "Internet"
+            listOf("camera", "gallery", "photo", "video", "music", "audio", "youtube", "media").any { text.contains(it) } -> "Multimedia"
+            listOf("word", "office", "document", "sheet", "pdf", "reader", "notes").any { text.contains(it) } -> "Office"
+            listOf("settings", "file", "manager", "terminal", "backup", "security", "system").any { text.contains(it) } -> "System"
+            listOf("developer", "ide", "code", "editor", "git", "debug").any { text.contains(it) } -> "Development"
+            listOf("game", "play").any { text.contains(it) } -> "Games"
+            listOf("calculator", "calendar", "clock", "contacts", "weather", "download", "maps").any { text.contains(it) } -> "Utilities"
+            else -> "Other"
+        }
+    }
+
+    private fun linuxAppCategory(app: LinuxDesktopApp): String {
+        val categories = app.categories.lowercase(Locale.ROOT)
+        return when {
+            categories.contains("security") || categories.contains("pentest") -> "Security Tools"
+            categories.contains("development") || categories.contains("ide") -> "Development"
+            categories.contains("network") || categories.contains("webbrowser") -> "Internet & Networking"
+            categories.contains("audio") || categories.contains("video") || categories.contains("graphics") -> "Multimedia"
+            categories.contains("office") || categories.contains("publishing") -> "Office"
+            categories.contains("system") || categories.contains("settings") -> "System"
+            categories.contains("utility") || categories.contains("accessibility") -> "Utilities"
+            categories.contains("game") -> "Games"
+            categories.contains("education") -> "Education"
+            else -> "Other Linux Applications"
+        }
+    }
+
+    private fun applicationMenuEntries(): List<AppMenuEntry> {
+        val result = mutableListOf<AppMenuEntry>()
+        if (prefs.getBoolean("show_android_apps", true)) apps.forEach { app ->
+            val key = "android:${app.activityInfo.packageName}/${app.activityInfo.name}"
+            result.add(AppMenuEntry(app.loadLabel(packageManager).toString(), androidAppCategory(app), "Android", key, androidApp = app))
+        }
+        if (prefs.getBoolean("show_linux_apps", true)) linuxApps.forEach { app ->
+            val key = "linux:${app.distro}:${app.desktopId}"
+            result.add(AppMenuEntry(app.name, linuxAppCategory(app), "Linux · ${app.distro}", key, linuxApp = app))
+        }
+        return result.sortedWith(compareBy<AppMenuEntry> { it.category }.thenBy { it.name.lowercase(Locale.ROOT) })
+    }
+
+    private fun addShortcut(entry: AppMenuEntry) {
+        val shortcuts = (prefs.getStringSet("desktop_shortcuts", emptySet()) ?: emptySet()).toMutableSet()
+        shortcuts.add(entry.key)
+        prefs.edit().putStringSet("desktop_shortcuts", shortcuts).apply()
+        buildDesktop()
+        toast("${entry.name} added to desktop")
+    }
+
     private fun showApplicationDrawer() {
-        val androidVisible = if (prefs.getBoolean("show_android_apps", true)) apps else emptyList()
-        val linuxVisible = if (prefs.getBoolean("show_linux_apps", true)) linuxApps else emptyList()
-        val rows = (androidVisible.map { it.loadLabel(packageManager).toString() + "  ·  Android" } +
-            linuxVisible.map { it.name + "  ·  Linux (" + it.distro + ")" }).toTypedArray()
-        if (rows.isEmpty()) {
+        val entries = applicationMenuEntries()
+        if (entries.isEmpty()) {
             AlertDialog.Builder(this).setTitle("Applications")
-                .setMessage("Both Android and Linux app visibility are turned off. Turn one on in Settings → Applications.")
-                .setPositiveButton("Open settings") { _, _ -> showAppearance() }
+                .setMessage(if (linuxScanRunning) "Scanning installed Linux applications…" else
+                    "No applications are currently visible. Turn Android apps or Linux apps on in Settings → Applications.")
+                .setPositiveButton("Settings") { _, _ -> showAppearance() }
                 .setNegativeButton("Close", null).show()
             return
         }
-        AlertDialog.Builder(this).setTitle("Applications").setItems(rows) { _, which ->
-            if (which < androidVisible.size) launchApp(androidVisible[which])
-            else launchLinuxApp(linuxVisible[which - androidVisible.size])
-        }.setPositiveButton("Done", null).show()
+        val dialog = Dialog(this)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(Color.rgb(25, 29, 39), 18)
+        }
+        root.addView(label("Applications", 20, Color.WHITE, true).apply { setPadding(dp(4), dp(4), dp(4), dp(8)) })
+        val searchBox = EditText(this).apply {
+            hint = "Search applications…"
+            singleLine = true
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setHintTextColor(muted)
+            background = rounded(Color.rgb(43, 48, 61), 10)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        root.addView(searchBox, LinearLayout.LayoutParams(-1, dp(46)))
+        val categories = (listOf("All") + entries.map { it.category }.distinct().sorted()).toMutableList()
+        var selectedCategory = "All"
+        val categoryBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val categoryScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(categoryBar)
+        }
+        root.addView(categoryScroll, LinearLayout.LayoutParams(-1, dp(48)))
+        val appList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val appScroll = ScrollView(this).apply { addView(appList); isFillViewport = true }
+        root.addView(appScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val renderApps = {
+            categoryBar.removeAllViews()
+            categories.forEach { category ->
+                val chip = Button(this).apply {
+                    text = category
+                    isAllCaps = false
+                    textSize = 10f
+                    setTextColor(Color.WHITE)
+                    background = rounded(if (selectedCategory == category) themeColors()[1] else Color.rgb(45, 51, 66), 9)
+                    setOnClickListener { selectedCategory = category; renderApplicationMenu() }
+                }
+                categoryBar.addView(chip, LinearLayout.LayoutParams(-2, dp(38)).apply { setMargins(dp(3), dp(4), dp(3), dp(4)) })
+            }
+            appList.removeAllViews()
+            val term = searchBox.text.toString().trim().lowercase(Locale.ROOT)
+            val filtered = entries.filter { (selectedCategory == "All" || it.category == selectedCategory) &&
+                (term.isEmpty() || it.name.lowercase(Locale.ROOT).contains(term) || it.category.lowercase(Locale.ROOT).contains(term)) }
+            if (filtered.isEmpty()) appList.addView(label("No matching applications", 12, muted).apply { setPadding(dp(12), dp(18), dp(12), dp(18)) })
+            filtered.forEach { entry ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = rounded(Color.rgb(38, 44, 57), 10)
+                    setPadding(dp(8), dp(6), dp(8), dp(6))
+                }
+                row.addView(label(if (entry.source == "Android") "▣" else "🐧", 20, Color.WHITE, true))
+                val textColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(9), 0, dp(4), 0) }
+                textColumn.addView(label(entry.name, 12, Color.WHITE, true))
+                textColumn.addView(label("${entry.category}  ·  ${entry.source}", 9, muted))
+                row.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f))
+                row.setOnClickListener {
+                    dialog.dismiss()
+                    entry.androidApp?.let { launchApp(it) }
+                    entry.linuxApp?.let { launchLinuxApp(it) }
+                }
+                row.setOnLongClickListener {
+                    AlertDialog.Builder(this).setTitle("Add desktop shortcut?")
+                        .setMessage("Add ${entry.name} to the desktop?").setNegativeButton("Cancel", null)
+                        .setPositiveButton("Add") { _, _ -> addShortcut(entry) }.show()
+                    true
+                }
+                val add = Button(this).apply {
+                    text = "＋"
+                    contentDescription = "Add ${entry.name} to desktop"
+                    isAllCaps = false
+                    setTextColor(Color.WHITE)
+                    background = rounded(themeColors()[1], 8)
+                    setOnClickListener { addShortcut(entry) }
+                }
+                row.addView(add, LinearLayout.LayoutParams(dp(42), dp(40)))
+                appList.addView(row, LinearLayout.LayoutParams(-1, dp(58)).apply { bottomMargin = dp(5) })
+            }
+        }
+        fun renderApplicationMenu() {
+            renderApps()
+        }
+        searchBox.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderApps() }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        renderApps()
+        root.addView(Button(this).apply {
+            text = "Close"; isAllCaps = false
+            setOnClickListener { dialog.dismiss() }
+        }, LinearLayout.LayoutParams(-1, dp(42)))
+        dialog.setContentView(root)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .94f).toInt(),
+            (resources.displayMetrics.heightPixels * .86f).toInt())
     }
 
     private fun showDesktopCustomizer() {
