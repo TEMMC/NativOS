@@ -49,28 +49,28 @@ internal object LinuxDistroLauncher {
         val bbPath = "/data/adb/magisk/busybox"
         val inner = """
             set -eu
-            BB="$1"; R="$2"; CMD="$3"
-            "$BB" mount --make-rprivate /
-            test -x "$R/bin/sh"
-            mkdir -p "$R/dev" "$R/proc" "$R/sys" "$R/run" "$R/tmp"
-            "$BB" mount -t tmpfs -o mode=755,nosuid tmpfs "$R/dev"
+            BB="${'$'}1"; R="${'$'}2"; CMD="${'$'}3"
+            "${'$'}BB" mount --make-rprivate /
+            test -x "${'$'}R/bin/sh"
+            mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run" "${'$'}R/tmp"
+            "${'$'}BB" mount -t tmpfs -o mode=755,nosuid tmpfs "${'$'}R/dev"
             for spec in "null 1 3" "zero 1 5" "full 1 7" "random 1 8" "urandom 1 9" "tty 5 0"; do
-                set -- $spec
-                "$BB" mknod "$R/dev/$1" c "$2" "$3"
-                chmod 666 "$R/dev/$1"
-                "$BB" mount --bind "/dev/$1" "$R/dev/$1"
+                set -- ${'$'}spec
+                "${'$'}BB" mknod "${'$'}R/dev/${'$'}1" c "${'$'}2" "${'$'}3"
+                chmod 666 "${'$'}R/dev/${'$'}1"
+                "${'$'}BB" mount --bind "/dev/${'$'}1" "${'$'}R/dev/${'$'}1"
             done
-            mkdir -p "$R/dev/pts" "$R/dev/shm"
-            "$BB" mount -t devpts -o newinstance,ptmxmode=0666,mode=0620 devpts "$R/dev/pts"
-            ln -sf pts/ptmx "$R/dev/ptmx"
-            "$BB" mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "$R/dev/shm"
-            ln -sf /proc/self/fd "$R/dev/fd"
-            ln -sf /proc/self/fd/0 "$R/dev/stdin"
-            ln -sf /proc/self/fd/1 "$R/dev/stdout"
-            ln -sf /proc/self/fd/2 "$R/dev/stderr"
-            "$BB" mount -t proc proc "$R/proc"
-            "$BB" mount -t sysfs sysfs "$R/sys"
-            exec chroot "$R" /bin/sh -c "$CMD"
+            mkdir -p "${'$'}R/dev/pts" "${'$'}R/dev/shm"
+            "${'$'}BB" mount -t devpts -o newinstance,ptmxmode=0666,mode=0620 devpts "${'$'}R/dev/pts"
+            ln -sf pts/ptmx "${'$'}R/dev/ptmx"
+            "${'$'}BB" mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "${'$'}R/dev/shm"
+            ln -sf /proc/self/fd "${'$'}R/dev/fd"
+            ln -sf /proc/self/fd/0 "${'$'}R/dev/stdin"
+            ln -sf /proc/self/fd/1 "${'$'}R/dev/stdout"
+            ln -sf /proc/self/fd/2 "${'$'}R/dev/stderr"
+            "${'$'}BB" mount -t proc proc "${'$'}R/proc"
+            "${'$'}BB" mount -t sysfs sysfs "${'$'}R/sys"
+            exec chroot "${'$'}R" /bin/sh -c "${'$'}CMD"
         """.trimIndent()
         val script = """
             PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/vendor/bin:/product/bin:${'$'}PATH
