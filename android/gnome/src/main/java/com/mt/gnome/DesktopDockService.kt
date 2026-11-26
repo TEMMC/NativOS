@@ -6,6 +6,7 @@ import android.content.pm.ResolveInfo
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.provider.Settings
 import android.os.IBinder
 import android.view.Gravity
 import android.view.MotionEvent
@@ -148,6 +149,31 @@ class DesktopDockService : Service() {
         }
         shortcut("▤", "Tools") {
             startActivity(Intent(this, DesktopToolsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        shortcut("⌂", "Desktop") {
+            startActivity(Intent(this, GnomeHomeActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        }
+        shortcut("▣", "Files") {
+            try { startActivity(Intent(this, FileManagerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            catch (_: Exception) { Toast.makeText(this, "Could not open MT Files", Toast.LENGTH_SHORT).show() }
+        }
+        shortcut("▧", "Photos") {
+            val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"; addCategory(Intent.CATEGORY_OPENABLE)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try { startActivity(Intent.createChooser(pick, "Choose a photo").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            catch (_: Exception) { Toast.makeText(this, "No photo picker is available", Toast.LENGTH_SHORT).show() }
+        }
+        shortcut("◉", "Alerts") {
+            try {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
         }
         val line = TextView(this).apply { setBackgroundColor(Color.argb(80,255,255,255)) }
         root.addView(line, LinearLayout.LayoutParams(dp(36), dp(1)).apply { topMargin=dp(4); bottomMargin=dp(4) })
