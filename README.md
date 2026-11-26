@@ -6,15 +6,16 @@ MT-GNOME is an Android-native desktop and launcher for Android phones. It is bui
 
 Provide a lightweight desktop-style experience on Android with:
 
-- A desktop workspace with a user-selectable wallpaper.
-- An app drawer for launching installed Android applications.
-- A desktop/app bar that can be shown or hidden.
-- Desktop windows with move, resize, minimize, maximize, and close controls.
-- A terminal window with an inline shell prompt and interactive terminal input.
-- PTY-backed terminal sessions with terminal-style output, cursor handling, and ANSI colours.
-- Android-native permissions and lifecycle handling.
+- A desktop workspace with user-selectable wallpapers and persistent customization.
+- An app drawer for installed Android applications and discovered Linux desktop entries.
+- A desktop app bar that can be shown or hidden.
+- Android app windows with move, resize, minimize, maximize, and close controls where firmware permits.
+- A distribution catalogue for installing and managing ARM64 Linux root filesystems.
+- A Terminal dock shortcut that launches the **real GNOME Terminal package inside an installed Linux distribution**.
+- A package-install action on each supported installed distribution when GNOME Terminal is missing.
+- Isolated Linux application launch using a private mount namespace.
 
-The terminal and windowing features must remain part of the Android application. Do not install or bundle MT-Phosh, MT-Phoc, Phosh, Phoc, or a Linux desktop package stack as dependencies of MT-GNOME.
+MT-GNOME does **not** embed its own terminal emulator or interactive PTY. It does not substitute Bash, BusyBox, or an Android text view for GNOME Terminal. It does not install or bundle MT-Phosh, MT-Phoc, Phosh, or Phoc.
 
 ## Build
 
@@ -22,9 +23,9 @@ The dedicated GitHub Actions workflow is:
 
 `.github/workflows/mt-gnome-build.yml`
 
-It builds only the Android `:gnome` module and publishes the debug APK as the `MT-GNOME-debug` workflow artifact. A signed release artifact is produced only when the repository's release-signing secrets are configured.
+It builds the Android `:gnome` module and publishes a debug APK. A signed release artifact is produced only when the repository's release-signing secrets are configured.
 
-To build locally with JDK 17 and Android SDK 35:
+To build locally with JDK 17 and Android SDK 36:
 
 ```sh
 cd android
@@ -41,20 +42,15 @@ android/gnome/build/outputs/apk/debug/
 
 - Android application module: `:gnome`
 - Application ID: `com.mt.gnome`
-- Minimum Android version: Android 8.0 (API 26)
-- Kotlin and Android SDK
-- Terminal view dependency: Termux terminal-view library
+- Minimum Android version: Android 14 (API 34)
+- Kotlin and Android SDK 36
+- Embedded X11 and Wayland runtime modules, independently maintained
+- Linux distro catalogue and package installer
+- Real GNOME Terminal and Linux desktop applications execute inside their selected distro rootfs; no Android-hosted terminal emulator is bundled.
 
-MT-GNOME is kept separate from the legacy MT-OS Linux desktop module. The MT-GNOME build must not download, install, or require packages from the MT-Phosh or MT-Phoc projects.
+Linux application launch requires root approval and a compatible running X11 or Wayland display session. Installing GNOME Terminal downloads the distribution's graphical dependencies and can require substantial storage and network data. A package being installed does not prove that its GUI can render: display-socket, compositor, input, and D-Bus integration must also be available.
 
-## Development priorities
-
-1. Keep the app lightweight and Android-native.
-2. Make the desktop, app bar, windows, and controls genuinely interactive.
-3. Keep the wallpaper visible through the transparent terminal window.
-4. Render typed commands and output inside the terminal, with the prompt at the bottom and input immediately after the `$` prompt.
-5. Fix PTY allocation and session lifecycle before claiming full interactive-terminal support.
-6. Verify every change with the dedicated MT-GNOME GitHub Actions build before sharing an APK.
+The distro runner uses a private mount namespace and a private devpts instance. It does not bind-mount the Android host's complete `/dev` or share the host PTY device.
 
 
 ## MT-GNOME advanced desktop customization
