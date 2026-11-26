@@ -208,6 +208,13 @@ class DistroCatalogActivity : Activity() {
 
     private fun setStatus(message: String) { runOnUiThread { if (::status.isInitialized) status.text = message.take(1400) } }
 
+    private fun confirmLxc(d: Distro) {
+        AlertDialog.Builder(this).setTitle("Download ${d.name}?")
+            .setMessage("Download the latest ARM64 root filesystem from the Linux Containers image server. MT-GNOME verifies the published SHA-256 checksum before extracting it into an isolated directory. This is a minimal container rootfs, not a bootable phone image.")
+            .setPositiveButton("Download and install") { _, _ -> installLxc(d) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
     private fun confirmAlpine() {
         AlertDialog.Builder(this).setTitle("Download Alpine Linux?")
             .setMessage("Download the official Alpine Linux $alpineVersion aarch64 mini root filesystem and verify its SHA-256 checksum before extraction.")
@@ -218,7 +225,6 @@ class DistroCatalogActivity : Activity() {
         if (busy) return
         // Re-check immediately before installing so an existing distro is never downloaded again.
         if (exists("alpine")) {
-            active = "alpine"
             prefs.edit().putString("active_distro", "alpine").apply()
             setStatus("\n[Alpine is already installed. Reusing the existing root filesystem; no download needed.]\n")
             showCatalogue()
@@ -250,7 +256,7 @@ class DistroCatalogActivity : Activity() {
                     prefs.edit().putString("active_distro", "alpine").apply()
                     setStatus("[Alpine installed. Alpine installed successfully.]\n")
                     setStatus("Next: run apk update to refresh package indexes.\n")
-                    dismissInstallProgress(); busy = false; ; showCatalogue()
+                    dismissInstallProgress(); busy = false; showCatalogue()
                 }
             } catch (e: Exception) {
                 archive?.delete()
@@ -341,7 +347,6 @@ class DistroCatalogActivity : Activity() {
         if (busy) return
         // Re-check immediately before downloading in case the catalogue state was stale.
         if (exists(d.id)) {
-            active = d.id
             prefs.edit().putString("active_distro", d.id).apply()
             setStatus("\n[${d.name} is already installed. Reusing the existing root filesystem; no download needed.]\n")
             showCatalogue()
@@ -384,11 +389,11 @@ class DistroCatalogActivity : Activity() {
                 runOnUiThread {
                     prefs.edit().putString("active_distro", d.id).apply()
                     setStatus("[${d.name} installed. Distribution installed successfully.]\n")
-                    dismissInstallProgress(); busy = false; ; showCatalogue()
+                    dismissInstallProgress(); busy = false; showCatalogue()
                 }
             } catch (e: Exception) {
                 rootExec("rm -rf '$staging'")
-                runOnUiThread { dismissInstallProgress(); setStatus("[Installation failed] ${e.message}\n"); setStatus("No distro was selected. Retry from DISTROS.\n"); busy = false;  }
+                runOnUiThread { dismissInstallProgress(); setStatus("[Installation failed] ${e.message}\n"); setStatus("No distro was selected. Retry from DISTROS.\n"); busy = false }
             } finally { archive?.delete(); tarFile?.delete() }
         }.start()
     }
