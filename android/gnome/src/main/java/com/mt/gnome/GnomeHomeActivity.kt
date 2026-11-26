@@ -1081,7 +1081,7 @@ class GnomeHomeActivity : Activity() {
         navItem("System & Security") {
             page("System & Security","Root access, Android permissions and optional command-line utilities")
             item("Root access","Authorize or verify Magisk integration") { enableLinuxWindows() }
-            item("Magisk BusyBox tools","Check whether the BusyBox binary provided by your Magisk module is available to MT-GNOME. BusyBox is optional; it does not replace the private mount namespace or make unsafe commands safe.") { checkBusyBox() }
+            item("BusyBox prerequisite","Check whether the BusyBox binary provided by your Magisk module is available to MT-GNOME. BusyBox is needed for the supported root-assisted distribution utility workflow; it does not replace the private mount namespace or make unsafe commands safe.") { checkBusyBox() }
             item("Android app permissions","Review permissions in Android settings") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName"))) }
             item("System settings","Open Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }
