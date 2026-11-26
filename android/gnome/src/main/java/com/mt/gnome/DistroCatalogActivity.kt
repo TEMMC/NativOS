@@ -52,23 +52,30 @@ class DistroCatalogActivity : Activity() {
         super.onCreate(savedInstanceState)
         buildCatalogue()
         val preferred = prefs.getString("active_distro", null)
-        val selected = (listOfNotNull(preferred) + distros.map { it.id }).distinct()
-            .firstOrNull { exists(it) && hasGnomeTerminal(it) }
-        if (selected != null) launchTerminal(selected) else showCatalogue()
+        Thread {
+            val states = distros.associate { it.id to distroState(it.id) }
+            val selected = if (preferred != null && states[preferred] == 2) preferred
+                else distros.firstOrNull { states[it.id] == 2 }?.id
+            runOnUiThread {
+                if (selected != null) launchTerminal(selected) else renderCatalogue(states)
+            }
+        }.apply { isDaemon = true; start() }
     }
 
     private fun root(id: String) = if (id == "alpine") alpineRoot else "/data/local/mt-os/distros/$id"
-    private fun exists(id: String): Boolean {
+    // 0 = not installed, 1 = installed without GNOME Terminal, 2 = GNOME Terminal installed.
+    private fun distroState(id: String): Int {
         val p = root(id)
-        return try { Runtime.getRuntime().exec(arrayOf("su", "-c", "test -x '$p/bin/sh' && test -f '$p/etc/os-release' && test -d '$p/usr/bin' && test -d '$p/var'")).waitFor() == 0 }
-        catch (_: Exception) { false }
+        return try {
+            val command = "if [ -x '$p/bin/sh' ] && [ -f '$p/etc/os-release' ] && [ -d '$p/usr/bin' ] && [ -d '$p/var' ]; then if [ -x '$p/usr/bin/gnome-terminal' ] || [ -x '$p/bin/gnome-terminal' ]; then echo 2; else echo 1; fi; else echo 0; fi"
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+            val value = process.inputStream.bufferedReader().readText().trim().toIntOrNull() ?: 0
+            if (process.waitFor() == 0) value else 0
+        } catch (_: Exception) { 0 }
     }
-    private fun hasGnomeTerminal(id: String): Boolean {
-        if (!exists(id)) return false
-        val p = root(id)
-        return try { Runtime.getRuntime().exec(arrayOf("su", "-c", "test -x '$p/usr/bin/gnome-terminal' -o -x '$p/bin/gnome-terminal'")).waitFor() == 0 }
-        catch (_: Exception) { false }
-    }
+    private fun exists(id: String) = distroState(id) > 0
+    private fun hasGnomeTerminal(id: String) = distroState(id) == 2
+
     private fun supportsGnomeTerminal(d: Distro) = d.manager != "opkg"
 
     private fun buildCatalogue() {
@@ -100,13 +107,21 @@ class DistroCatalogActivity : Activity() {
     }
 
     private fun showCatalogue() {
+        status.text = "Refreshing installed distribution status…"
+        Thread {
+            val states = distros.associate { it.id to distroState(it.id) }
+            runOnUiThread { if (!isFinishing && !isDestroyed) renderCatalogue(states) }
+        }.apply { isDaemon = true; start() }
+    }
+
+    private fun renderCatalogue(states: Map<String, Int>) {
         if (!::cards.isInitialized) return
         cards.removeAllViews()
-        var installedCount = 0
+        val installedCount = states.values.count { it > 0 }
         distros.forEach { d ->
-            val installed = exists(d.id)
-            val ready = installed && hasGnomeTerminal(d.id)
-            if (installed) installedCount++
+            val state = states[d.id] ?: 0
+            val installed = state > 0
+            val ready = state == 2
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -144,7 +159,6 @@ class DistroCatalogActivity : Activity() {
     }
 
     private fun launchTerminal(id: String) {
-        if (!hasGnomeTerminal(id)) { showCatalogue(); return }
         status.text = "Launching GNOME Terminal…"
         Thread {
             val result = LinuxDistroLauncher.launchGnomeTerminal(id)
@@ -186,9 +200,10 @@ class DistroCatalogActivity : Activity() {
                 showInstallProgress("Installing GNOME Terminal")
                 Thread {
                     val result = LinuxDistroLauncher.runCommand(d.id, command, 3600)
+                    val installedOk = result.first == 0 && distroState(d.id) == 2
                     runOnUiThread {
                         busy = false; dismissInstallProgress()
-                        if (result.first == 0 && hasGnomeTerminal(d.id)) {
+                        if (installedOk) {
                             prefs.edit().putString("active_distro", d.id).apply()
                             showCatalogue()
                             AlertDialog.Builder(this).setTitle("GNOME Terminal installed")
