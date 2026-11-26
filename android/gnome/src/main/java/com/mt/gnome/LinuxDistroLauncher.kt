@@ -70,7 +70,7 @@ internal object LinuxDistroLauncher {
             ln -sf /proc/self/fd/2 "${'$'}R/dev/stderr"
             "${'$'}BB" mount -t proc proc "${'$'}R/proc"
             "${'$'}BB" mount -t sysfs sysfs "${'$'}R/sys"
-            exec chroot "${'
+            exec chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root; exec /bin/sh -c "$1"' _ "${'$'}CMD"
         """.trimIndent()
         val script = """
             PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/vendor/bin:/product/bin:${'$'}PATH
