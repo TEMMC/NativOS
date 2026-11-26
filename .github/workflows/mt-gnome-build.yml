@@ -122,6 +122,14 @@ jobs:
           grep -Fq 'mount --make-rprivate /' "$LAUNCHER"
           grep -Fq 'newinstance,ptmxmode=0666' "$LAUNCHER"
           echo "Private Linux application mount namespace guard passed."
+          test ! -f android/gnome/src/main/java/com/mt/gnome/TerminalActivity.kt
+          test ! -f android/gnome/src/main/java/com/mt/gnome/FloatingTerminalService.kt
+          test ! -f android/gnome/src/main/java/com/mt/gnome/MtTerminalBridge.kt
+          ! grep -q 'terminal-view' android/gnome/build.gradle.kts
+          grep -q 'DistroCatalogActivity' android/gnome/src/main/AndroidManifest.xml
+          grep -q 'Install GNOME Terminal' android/gnome/src/main/java/com/mt/gnome/DistroCatalogActivity.kt
+          grep -q 'gnome-terminal' android/gnome/src/main/java/com/mt/gnome/LinuxDistroLauncher.kt
+          echo "Embedded terminal removal and real GNOME Terminal launcher checks passed."
       - name: Configure Gradle dependency cache
         uses: gradle/actions/setup-gradle@v4
         with:
