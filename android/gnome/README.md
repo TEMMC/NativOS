@@ -62,3 +62,14 @@ MT-GNOME is a launcher, not a replacement for Android's WindowManager. It reques
 MT-GNOME is an Android application, not a custom Android ROM. Wi-Fi, Bluetooth, VPN, notifications, accessibility, screen capture, audio routing, external-display policy, and protected storage remain subject to Android permissions and system services. A shortcut to a system page is not equivalent to an in-app replacement for that service. Process enumeration is limited by Android. Calendar, clock, browser, and download actions depend on installed Android handlers.
 
 The following larger capabilities are not represented as complete merely by listing them: independent multi-window workspaces, a dual-pane file manager, an in-app notification shade, a full settings framework, remote desktop, SSH/SFTP, cloud sync/accounts, extension marketplace, AI assistant, and full external-display desktop mode. They require dedicated implementations, permission flows, and device testing.
+
+
+## Desktop shell and application discovery
+
+The desktop presents Android launcher activities and Linux application entries together on a PC-style workspace. Linux entries are discovered from each installed distribution's `/usr/share/applications`, `/usr/local/share/applications`, and root user's local applications directory by reading valid `.desktop` files. Discovery runs with the optional root bridge and refreshes when MT-GNOME returns to the foreground.
+
+The Terminal dock action opens the single MT Terminal activity. MT Terminal checks the remembered distribution, then searches all supported distribution rootfs paths; if an installed rootfs is found it opens that shell, otherwise it presents the distribution catalogue. It does not download or replace a distribution simply because the Terminal button was pressed.
+
+Linux app shortcuts can be hidden independently from installed packages. Long-press a desktop shortcut to remove only that shortcut; use Desktop > Customize > More options to restore removed shortcuts, resize icons, rename the desktop, change wallpaper, or reset the desktop layout. The Customize panel also controls the top-panel clock, workspace/settings controls, Android/Linux shortcut visibility, and each dock item. These choices are stored in MT-GNOME preferences and do not uninstall apps.
+
+**Linux GUI launch status:** Linux application entries can be discovered and handed to the selected distro through MT Terminal. Their graphical windows still require a running X11 or Wayland session and a working Android-hosted surface/input bridge. A desktop entry appearing on the home screen is not, by itself, proof that its GUI can be rendered as an Android desktop window. This remains an explicit device-validation item for the A04e.
