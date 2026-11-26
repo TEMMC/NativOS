@@ -117,4 +117,3 @@ internal object LinuxDistroLauncher {
 
     private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 }
-}
