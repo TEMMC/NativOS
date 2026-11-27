@@ -957,7 +957,7 @@ class GnomeHomeActivity : Activity() {
             isFillViewport = false
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
             addView(panel, ScrollView.LayoutParams(-1, -2))
         }
         val navScroll = ScrollView(this).apply { isFillViewport = true; addView(nav) }
