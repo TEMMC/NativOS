@@ -88,12 +88,7 @@ internal object LinuxDistroLauncher {
             exec unshare -m /system/bin/sh -c ${quote(inner)} _ "${'$'}BB" ${quote(rootPath)} ${quote(command)}
         """.trimIndent()
         return try {
-            val suPath = resolveSu()
-            try { onOutput("Requesting Magisk root authorization…") } catch (_: Exception) { }
-            try { onOutput("Using root executable: $suPath") } catch (_: Exception) { }
-            try { onOutput("Preparing isolated Linux mount namespace for $id…") } catch (_: Exception) { }
-            val process = Runtime.getRuntime().exec(arrayOf(suPath, "-c", "exec 2>&1; $script"))
-            try { onOutput("Root process started (PID ${process.pid()}); waiting for setup and package-manager output…") } catch (_: Exception) { }
+            val process = Runtime.getRuntime().exec(arrayOf(resolveSu(), "-c", "exec 2>&1; $script"))
             val output = StringBuilder()
             val reader = Thread {
                 try {
@@ -106,20 +101,15 @@ internal object LinuxDistroLauncher {
                 } catch (_: Exception) { }
             }.apply { isDaemon = true; start() }
             if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                try { onOutput("ERROR: Linux command timed out after $timeoutSeconds seconds") } catch (_: Exception) { }
                 process.destroy()
                 if (process.isAlive) process.destroyForcibly()
                 reader.join(500)
                 return Pair(124, "Linux command timed out after $timeoutSeconds seconds")
             }
             reader.join(1500)
-            val code = process.exitValue()
-            try { onOutput("Linux command finished with exit code $code") } catch (_: Exception) { }
-            Pair(code, synchronized(output) { output.toString() })
+            Pair(process.exitValue(), synchronized(output) { output.toString() })
         } catch (e: Exception) {
-            val message = e.message ?: e.toString()
-            try { onOutput("ERROR: $message") } catch (_: Exception) { }
-            Pair(126, message)
+            Pair(126, e.message ?: e.toString())
         }
     }
 
@@ -129,5 +119,4 @@ internal object LinuxDistroLauncher {
     }
 
     private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
-}
 }
