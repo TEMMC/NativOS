@@ -1192,6 +1192,15 @@ class GnomeHomeActivity : Activity() {
             item("Display over other apps","Grant special access for the floating app bar and pointer") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
             item("Accessibility service","Enable MT-GNOME Pointer under Installed services") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
             item("Android app permissions","Review and grant available runtime permissions") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
+            item("Battery optimisation","Allow MT-GNOME to keep long-running Linux downloads and package installation active while the screen is off") {
+                if (android.os.Build.VERSION.SDK_INT >= 23) {
+                    val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                    if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                        try { startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) }
+                        catch (_: Exception) { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                    } else toast("MT-GNOME is already exempt from battery optimisation")
+                }
+            }
             item("System settings","Open Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }
         navItem("About") { page("About MT-GNOME","MT-OS desktop shell"); item("Version","0.5.0-alpha") {}; item("Developer","Tinotenda Enock Mapfumo") {}; item("Device","${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}") {} }
