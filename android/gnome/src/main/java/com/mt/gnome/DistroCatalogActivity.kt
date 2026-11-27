@@ -320,13 +320,21 @@ class DistroCatalogActivity : Activity() {
                 file.outputStream().buffered().use { target ->
                     val buffer = ByteArray(64 * 1024)
                     var done = 0L
+                    var lastReportedBytes = 0L
+                    var lastReportedAt = System.currentTimeMillis()
                     while (true) {
                         val count = source.read(buffer)
                         if (count < 0) break
                         target.write(buffer, 0, count)
                         done += count
-                        onProgress(done, total)
+                        val now = System.currentTimeMillis()
+                        if (done - lastReportedBytes >= 512L * 1024L || now - lastReportedAt >= 700L) {
+                            onProgress(done, total)
+                            lastReportedBytes = done
+                            lastReportedAt = now
+                        }
                     }
+                    onProgress(done, total)
                 }
             }
             if (!file.isFile || file.length() == 0L) error("Downloaded archive is empty")
