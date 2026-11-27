@@ -953,7 +953,13 @@ class GnomeHomeActivity : Activity() {
         body=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
         val nav=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(36,38,49),12); setPadding(dp(4),dp(4),dp(4),dp(4)) }
         val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(10),0,0,0) }
-        val scroll=ScrollView(this).apply { isFillViewport=true }; scroll.addView(panel)
+        val scroll=ScrollView(this).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            addView(panel, ScrollView.LayoutParams(-1, -2))
+        }
         val navScroll = ScrollView(this).apply { isFillViewport = true; addView(nav) }
         body.addView(navScroll,LinearLayout.LayoutParams(dp(108),-1)); body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
         root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
@@ -1091,6 +1097,12 @@ class GnomeHomeActivity : Activity() {
             }
             item("Display over other apps","Allow the floating app bar and pointer overlay") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
             item("Accessibility service","Enable MT-GNOME Pointer for pointer clicks and gestures") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            item("Allow background downloads","Open Android's battery-optimisation exemption screen so long Linux downloads are less likely to be paused") {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try { startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) }
+                    catch (_: Exception) { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                } else toast("Battery optimisation exemption is not needed on this Android version")
+            }
             item("App permissions","Review MT-GNOME permissions and special access") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
         }
         navItem("Windows") {
