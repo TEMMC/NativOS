@@ -15,6 +15,8 @@ import android.widget.TextView
 import android.widget.Toast
 import java.security.MessageDigest
 import java.security.SecureRandom
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 /**
  * Local MT-GNOME launcher lock. Credentials are salted and hashed; plaintext is never persisted.
@@ -115,7 +117,7 @@ class LockSecurityActivity : Activity() {
         content.addView(credential, LinearLayout.LayoutParams(-1, dp(52)))
         content.addView(actionButton("Save lock") {
             val value = credential.text.toString()
-            if (selectedMode == "pin" && (value.length < 4 || !value.all(Char::isDigit))) {
+            if (selectedMode == "pin" && (value.length < 4 || !value.all { it.isDigit() })) {
                 status.text = "PIN must contain at least 4 digits."
             } else if (value.length < 4) {
                 status.text = "Use at least 4 characters."
@@ -196,9 +198,13 @@ class LockSecurityActivity : Activity() {
     }
 
     private fun hash(value: String, salt: ByteArray): String {
-        var bytes = salt + value.toByteArray(Charsets.UTF_8)
-        repeat(120_000) { bytes = MessageDigest.getInstance("SHA-256").digest(bytes) }
-        return bytes.toHex()
+        val spec = PBEKeySpec(value.toCharArray(), salt, 150_000, 256)
+        return try {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                .generateSecret(spec).encoded.toHex()
+        } finally {
+            spec.clearPassword()
+        }
     }
 
     private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
