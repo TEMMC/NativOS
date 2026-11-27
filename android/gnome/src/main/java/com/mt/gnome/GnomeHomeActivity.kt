@@ -1010,7 +1010,7 @@ class GnomeHomeActivity : Activity() {
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
             clipToPadding = false
-            addView(panel, android.widget.FrameLayout.LayoutParams(-1, -2))
+            addView(panel, android.view.ViewGroup.LayoutParams(-1, -2))
         }
         val navScroll = ScrollView(this).apply {
             isFillViewport = true
@@ -1018,7 +1018,7 @@ class GnomeHomeActivity : Activity() {
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             clipToPadding = false
-            addView(nav, android.widget.FrameLayout.LayoutParams(-1, -2))
+            addView(nav, android.view.ViewGroup.LayoutParams(-1, -2))
         }
         body.addView(navScroll,LinearLayout.LayoutParams(dp(108),-1))
         body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
