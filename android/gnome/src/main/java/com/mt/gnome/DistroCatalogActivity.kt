@@ -217,19 +217,15 @@ class DistroCatalogActivity : Activity() {
                     updateInstallPhase(if (result.first == 0) "Checking installed GNOME Terminal…" else "Installation failed")
                     val installedOk = result.first == 0 && distroState(d.id) == 2
                     runOnUiThread {
-                        busy = false; dismissInstallProgress()
+                        busy = false
                         if (installedOk) {
                             prefs.edit().putString("active_distro", d.id).apply()
-                            showCatalogue()
-                            AlertDialog.Builder(this).setTitle("GNOME Terminal installed")
-                                .setMessage("The real GNOME Terminal package is installed in ${d.name}. Open it now?")
-                                .setNegativeButton("Later", null)
-                                .setPositiveButton("Open") { _, _ -> launchTerminal(d.id) }.show()
+                            appendInstallLog("GNOME Terminal is installed and its executable was verified.")
+                            finishInstallProgress("GNOME Terminal installation completed successfully")
                         } else {
-                            showCatalogue()
-                            AlertDialog.Builder(this).setTitle("Installation failed")
-                                .setMessage(result.second.take(2200).ifBlank { "The package manager did not install gnome-terminal." })
-                                .setPositiveButton("OK", null).show()
+                            appendInstallLog("ERROR: GNOME Terminal installation did not complete.")
+                            if (result.second.isNotBlank()) appendInstallLog(result.second)
+                            finishInstallProgress("Installation failed — review the log above")
                         }
                     }
                 }.apply { isDaemon = true; start() }
@@ -287,7 +283,7 @@ class DistroCatalogActivity : Activity() {
                     prefs.edit().putString("active_distro", "alpine").apply()
                     setStatus("[Alpine installed. Alpine installed successfully.]\n")
                     setStatus("Next: run apk update to refresh package indexes.\n")
-                    dismissInstallProgress(); busy = false; showCatalogue()
+                    busy = false; finishInstallProgress("Installation completed successfully")
                 }
             } catch (e: Exception) {
                 appendInstallLog("ERROR: ${e.message ?: e.toString()}")
@@ -295,9 +291,11 @@ class DistroCatalogActivity : Activity() {
                 rootExec("rm -rf '$alpineRoot.installing'")
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-                    dismissInstallProgress(); setStatus("[Installation failed] ${e.message}\n")
-                    setStatus("No distro was selected. Retry from DISTROS.\n")
-                    busy = false; 
+                    appendInstallLog("ERROR: ${e.message ?: e.toString()}")
+                    setStatus("[Installation failed] ${e.message}\n")
+                    setStatus("No distro was selected. Review the installation log, then close this window to retry.\n")
+                    busy = false
+                    finishInstallProgress("Installation failed — review the log above") 
                 }
             }
         }.start()
@@ -513,7 +511,13 @@ class DistroCatalogActivity : Activity() {
                 }
             } catch (e: Exception) {
                 rootExec("rm -rf '$staging'")
-                runOnUiThread { dismissInstallProgress(); setStatus("[Installation failed] ${e.message}\n"); setStatus("No distro was selected. Retry from DISTROS.\n"); busy = false }
+                runOnUiThread {
+                    appendInstallLog("ERROR: ${e.message ?: e.toString()}")
+                    setStatus("[Installation failed] ${e.message}\n")
+                    setStatus("No distro was selected. Review the installation log, then close this window to retry.\n")
+                    busy = false
+                    finishInstallProgress("Installation failed — review the log above")
+                }
             } finally { archive?.delete(); tarFile?.delete() }
         }.start()
     }
