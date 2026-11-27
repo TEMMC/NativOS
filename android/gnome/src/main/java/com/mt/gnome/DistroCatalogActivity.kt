@@ -304,18 +304,39 @@ class DistroCatalogActivity : Activity() {
     }
 
     private fun fetchText(address: String): String {
-        val c = (URL(address).openConnection() as HttpURLConnection).apply { connectTimeout = 45000; readTimeout = 90000; instanceFollowRedirects = true }
-        try { if (c.responseCode !in 200..299) error("Checksum server HTTP ${c.responseCode}"); return c.inputStream.bufferedReader().use { it.readText() } }
-        finally { c.disconnect() }
+        val c = (URL(address).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 20000; readTimeout = 30000; instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "MT-GNOME/1.0")
+        }
+        try {
+            appendInstallLog("Requesting metadata: $address")
+            val response = c.responseCode
+            if (response !in 200..299) error("Metadata server HTTP $response")
+            val body = c.inputStream.bufferedReader().use { it.readText() }
+            appendInstallLog("Metadata received: ${body.length} characters")
+            return body
+        } catch (e: Exception) {
+            appendInstallLog("NETWORK ERROR: ${e.javaClass.simpleName}: ${e.message ?: "unknown error"}")
+            throw e
+        } finally { c.disconnect() }
     }
 
     private fun download(address: String, file: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
         val c = (URL(address).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 45000; readTimeout = 120000; instanceFollowRedirects = true
+            connectTimeout = 20000
+            readTimeout = 20000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "MT-GNOME/1.0")
         }
         try {
-            if (c.responseCode !in 200..299) error("Download server HTTP ${c.responseCode}")
+            appendInstallLog("Connecting to: $address")
+            updateInstallPhase("Connecting to download server…")
+            val response = c.responseCode
+            if (response !in 200..299) error("Download server HTTP $response")
             val total = c.contentLengthLong
+            appendInstallLog("Server response: HTTP $response")
+            appendInstallLog(if (total > 0) "Download size: $total bytes" else "Server did not provide a content length; showing indeterminate progress")
+            updateInstallPhase("Connected. Receiving archive…")
             c.inputStream.use { source ->
                 file.outputStream().buffered().use { target ->
                     val buffer = ByteArray(64 * 1024)
@@ -328,7 +349,7 @@ class DistroCatalogActivity : Activity() {
                         target.write(buffer, 0, count)
                         done += count
                         val now = System.currentTimeMillis()
-                        if (done - lastReportedBytes >= 512L * 1024L || now - lastReportedAt >= 700L) {
+                        if (done - lastReportedBytes >= 256L * 1024L || now - lastReportedAt >= 500L) {
                             onProgress(done, total)
                             lastReportedBytes = done
                             lastReportedAt = now
@@ -339,32 +360,37 @@ class DistroCatalogActivity : Activity() {
             }
             if (!file.isFile || file.length() == 0L) error("Downloaded archive is empty")
             if (total > 0 && file.length() != total) error("Download ended early: received ${file.length()} of $total bytes")
+            appendInstallLog("Archive received successfully: ${file.length()} bytes")
+        } catch (e: Exception) {
+            appendInstallLog("DOWNLOAD ERROR: ${e.javaClass.simpleName}: ${e.message ?: "unknown error"}")
+            throw e
         } finally { c.disconnect() }
     }
 
     private fun showInstallProgress(title: String) {
-        runOnUiThread {
-            installLogBuffer.setLength(0)
-            lastProgressLogBytes = 0L
-            val panel = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(18), dp(8), dp(18), dp(14))
-                setBackgroundColor(Color.rgb(24, 29, 40))
-            }
-            installPhase = TextView(this).apply { text = "Starting…"; textSize = 13f; setTextColor(Color.WHITE); setPadding(0, 0, 0, dp(8)) }
-            installBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 0; isIndeterminate = true }
-            val logTitle = TextView(this).apply { text = "INSTALLATION LOG"; textSize = 10f; setTextColor(Color.rgb(130, 190, 255)); setPadding(0, dp(12), 0, dp(5)) }
-            installLog = TextView(this).apply { text = "Waiting for installer…"; textSize = 11f; typeface = android.graphics.Typeface.MONOSPACE; setTextColor(Color.rgb(205, 216, 232)); setPadding(dp(8), dp(8), dp(8), dp(8)) }
-            val logScroll = ScrollView(this).apply { isFillViewport = true; addView(installLog) }
-            panel.addView(installPhase)
-            panel.addView(installBar, LinearLayout.LayoutParams(-1, dp(8)))
-            panel.addView(logTitle)
-            panel.addView(logScroll, LinearLayout.LayoutParams(-1, dp(230)))
-            installProgress = AlertDialog.Builder(this).setTitle(title).setView(panel).setCancelable(false).create()
-            installProgress?.show()
-            installProgress?.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), -2)
-            appendInstallLog("Installer started")
+        // All callers enter from a button callback on the UI thread. Build the
+        // window synchronously before starting the worker so early log/progress
+        // events cannot race ahead of the dialog and disappear.
+        installLogBuffer.setLength(0)
+        lastProgressLogBytes = 0L
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(14))
+            setBackgroundColor(Color.rgb(24, 29, 40))
         }
+        installPhase = TextView(this).apply { text = "Starting installer…"; textSize = 13f; setTextColor(Color.WHITE); setPadding(0, 0, 0, dp(8)) }
+        installBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 0; isIndeterminate = true }
+        val logTitle = TextView(this).apply { text = "LIVE INSTALLATION LOG"; textSize = 10f; setTextColor(Color.rgb(130, 190, 255)); setPadding(0, dp(12), 0, dp(5)) }
+        installLog = TextView(this).apply { text = "Waiting for installer…"; textSize = 11f; typeface = android.graphics.Typeface.MONOSPACE; setTextColor(Color.rgb(205, 216, 232)); setPadding(dp(8), dp(8), dp(8), dp(8)) }
+        val logScroll = ScrollView(this).apply { isFillViewport = true; isVerticalScrollBarEnabled = true; addView(installLog) }
+        panel.addView(installPhase)
+        panel.addView(installBar, LinearLayout.LayoutParams(-1, dp(8)))
+        panel.addView(logTitle)
+        panel.addView(logScroll, LinearLayout.LayoutParams(-1, dp(230)))
+        installProgress = AlertDialog.Builder(this).setTitle(title).setView(panel).setCancelable(false).create()
+        installProgress?.show()
+        installProgress?.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), -2)
+        appendInstallLog("Installer window opened")
     }
 
     private fun appendInstallLog(message: String) {
