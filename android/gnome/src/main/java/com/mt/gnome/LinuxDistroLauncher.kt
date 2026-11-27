@@ -63,7 +63,7 @@ internal object LinuxDistroLauncher {
             mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run" "${'$'}R/tmp"
             "${'$'}BB" mount -t tmpfs -o mode=755,nosuid tmpfs "${'$'}R/dev"
             for spec in "null 1 3" "zero 1 5" "full 1 7" "random 1 8" "urandom 1 9" "tty 5 0"; do
-                set -- ${'                "${'$'}BB" mknod "${'$'}R/dev/${'$'}1" c "${'$'}2" "${'$'}3"
+                set -- ${' "${'$'}R/dev/${'$'}1" c "${'$'}2" "${'$'}3"
                 chmod 666 "${'$'}R/dev/${'$'}1"
                 "${'$'}BB" mount --bind "/dev/${'$'}1" "${'$'}R/dev/${'$'}1"
             done
@@ -129,70 +129,4 @@ internal object LinuxDistroLauncher {
 
     private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 }
-}spec
-                "${'$'}BB" mknod "${'$'}R/dev/${'$'}1" c "${'$'}2" "${'$'}3"
-                chmod 666 "${'$'}R/dev/${'$'}1"
-                "${'$'}BB" mount --bind "/dev/${'$'}1" "${'$'}R/dev/${'$'}1"
-            done
-            mkdir -p "${'$'}R/dev/pts" "${'$'}R/dev/shm"
-            "${'$'}BB" mount -t devpts -o newinstance,ptmxmode=0666,mode=0620 devpts "${'$'}R/dev/pts"
-            ln -sf pts/ptmx "${'$'}R/dev/ptmx"
-            "${'$'}BB" mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "${'$'}R/dev/shm"
-            ln -sf /proc/self/fd "${'$'}R/dev/fd"
-            ln -sf /proc/self/fd/0 "${'$'}R/dev/stdin"
-            ln -sf /proc/self/fd/1 "${'$'}R/dev/stdout"
-            ln -sf /proc/self/fd/2 "${'$'}R/dev/stderr"
-            "${'$'}BB" mount -t proc proc "${'$'}R/proc"
-            "${'$'}BB" mount -t sysfs sysfs "${'$'}R/sys"
-            exec chroot "${'$'}R" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root USER=root LOGNAME=root; exec /bin/sh -c "$1"' _ "${'$'}CMD"
-        """.trimIndent()
-        val script = """
-            PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/vendor/bin:/product/bin:${'$'}PATH
-            export PATH
-            BB='$bbPath'
-            if [ ! -x "${'$'}BB" ]; then BB=${'$'}(command -v busybox) || exit 126; fi
-            exec unshare -m /system/bin/sh -c ${quote(inner)} _ "${'$'}BB" ${quote(rootPath)} ${quote(command)}
-        """.trimIndent()
-        return try {
-            val suPath = resolveSu()
-            try { onOutput("Requesting Magisk root authorization…") } catch (_: Exception) { }
-            try { onOutput("Using root executable: $suPath") } catch (_: Exception) { }
-            try { onOutput("Preparing isolated Linux mount namespace for $id…") } catch (_: Exception) { }
-            val process = Runtime.getRuntime().exec(arrayOf(suPath, "-c", "exec 2>&1; $script"))
-            try { onOutput("Root process started (PID ${process.pid()}); waiting for setup and package-manager output…") } catch (_: Exception) { }
-            val output = StringBuilder()
-            val reader = Thread {
-                try {
-                    process.inputStream.bufferedReader().useLines { lines ->
-                        lines.forEach { line ->
-                            synchronized(output) { output.append(line).append('\n') }
-                            try { onOutput(line) } catch (_: Exception) { }
-                        }
-                    }
-                } catch (_: Exception) { }
-            }.apply { isDaemon = true; start() }
-            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                try { onOutput("ERROR: Linux command timed out after $timeoutSeconds seconds") } catch (_: Exception) { }
-                process.destroy()
-                if (process.isAlive) process.destroyForcibly()
-                reader.join(500)
-                return Pair(124, "Linux command timed out after $timeoutSeconds seconds")
-            }
-            reader.join(1500)
-            val code = process.exitValue()
-            try { onOutput("Linux command finished with exit code $code") } catch (_: Exception) { }
-            Pair(code, synchronized(output) { output.toString() })
-        } catch (e: Exception) {
-            val message = e.message ?: e.toString()
-            try { onOutput("ERROR: $message") } catch (_: Exception) { }
-            Pair(126, message)
-        }
-    }
-
-    private fun resolveSu(): String {
-        val candidates = listOf("/system/bin/su", "/system/xbin/su", "/sbin/su", "/debug_ramdisk/su", "/data/adb/magisk/su", "/data/adb/ksu/bin/su")
-        return candidates.firstOrNull { File(it).canExecute() } ?: "su"
-    }
-
-    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 }
