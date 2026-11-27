@@ -70,7 +70,14 @@ class LockSecurityActivity : Activity() {
         }
         root.addView(status)
         if (locked) showUnlockForm() else showSettings()
-        setContentView(root)
+        val pageScroll = android.widget.ScrollView(this).apply {
+            isFillViewport = true
+            isSmoothScrollingEnabled = true
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(root, android.view.ViewGroup.LayoutParams(-1, -2))
+        }
+        setContentView(pageScroll)
     }
 
     private fun showSettings() {
