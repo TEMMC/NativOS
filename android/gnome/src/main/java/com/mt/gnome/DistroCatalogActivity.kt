@@ -507,7 +507,8 @@ class DistroCatalogActivity : Activity() {
                 runOnUiThread {
                     prefs.edit().putString("active_distro", d.id).apply()
                     setStatus("[${d.name} installed. Distribution installed successfully.]\n")
-                    dismissInstallProgress(); busy = false; showCatalogue()
+                    busy = false
+                    finishInstallProgress("${d.name} installation completed successfully")
                 }
             } catch (e: Exception) {
                 rootExec("rm -rf '$staging'")
