@@ -45,6 +45,7 @@
         </service>
         <activity android:name=".FileManagerActivity" android:exported="false" android:label="MT Files" android:resizeableActivity="true" />
         <activity android:name=".DesktopToolsActivity" android:exported="false" android:label="Desktop Tools" android:resizeableActivity="true" />
+        <activity android:name=".LockSecurityActivity" android:exported="false" android:label="Desktop security" android:excludeFromRecents="true" />
         <activity android:name=".DistroCatalogActivity" android:exported="false" android:label="GNOME Terminal catalogue" android:resizeableActivity="true" />
         <activity
             android:name=".GnomeHomeActivity"
