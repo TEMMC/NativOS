@@ -5,6 +5,8 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
 import android.net.Uri
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.content.pm.ResolveInfo
 import android.content.res.Configuration
@@ -16,6 +18,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Build
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -1077,6 +1080,18 @@ class GnomeHomeActivity : Activity() {
             item("Desktop utilities","Open system monitor, file access, workspaces and quick settings") {
                 openInternalWindow(DesktopToolsActivity::class.java)
             }
+        }
+        navItem("Permissions") {
+            page("Permissions","Grant Android permissions MT-GNOME needs. Android shows each approval screen; the app cannot grant restricted permissions silently.")
+            item("Notification permission","Allow MT-GNOME to post desktop notifications") {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 7301)
+                    else toast("Notification permission is already granted")
+                } else toast("No runtime notification permission is required on this Android version")
+            }
+            item("Display over other apps","Allow the floating app bar and pointer overlay") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
+            item("Accessibility service","Enable MT-GNOME Pointer for pointer clicks and gestures") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            item("App permissions","Review MT-GNOME permissions and special access") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
         }
         navItem("Windows") {
             page("Windows","Floating app window behaviour")
