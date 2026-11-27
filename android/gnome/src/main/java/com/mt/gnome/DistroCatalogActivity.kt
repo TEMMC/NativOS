@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.PowerManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -28,6 +29,7 @@ class DistroCatalogActivity : Activity() {
     private val alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/"
     private val prefs by lazy { getSharedPreferences("mt_terminal", MODE_PRIVATE) }
     private var busy = false
+    private var installWakeLock: PowerManager.WakeLock? = null
     private var installProgress: AlertDialog? = null
     private var installPhase: TextView? = null
     private var installLog: TextView? = null
@@ -211,7 +213,17 @@ class DistroCatalogActivity : Activity() {
                 appendInstallLog("Command: " + command)
                 Thread {
                     updateInstallPhase("Starting package manager…")
+                    appendInstallLog("Package manager started. Waiting for live output; dependency resolution can take several minutes.")
+                    val heartbeatActive = java.util.concurrent.atomic.AtomicBoolean(true)
+                    val heartbeat = Thread {
+                        while (heartbeatActive.get()) {
+                            try { Thread.sleep(12000L) } catch (_: InterruptedException) { break }
+                            if (heartbeatActive.get()) appendInstallLog("Still working — package manager has not exited yet.")
+                        }
+                    }.apply { isDaemon = true; start() }
                     val result = LinuxDistroLauncher.runCommand(d.id, command, 3600) { line -> appendInstallLog(line) }
+                    heartbeatActive.set(false)
+                    heartbeat.interrupt()
                     appendInstallLog("Package manager exited with code " + result.first)
                     if (result.second.isNotBlank() && result.first != 0) appendInstallLog(result.second)
                     updateInstallPhase(if (result.first == 0) "Checking installed GNOME Terminal…" else "Installation failed")
@@ -371,6 +383,16 @@ class DistroCatalogActivity : Activity() {
         // events cannot race ahead of the dialog and disappear.
         installLogBuffer.setLength(0)
         lastProgressLogBytes = 0L
+        try {
+            val power = getSystemService(POWER_SERVICE) as PowerManager
+            installWakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MT-GNOME:LinuxInstaller").apply {
+                setReferenceCounted(false)
+                acquire(3L * 60L * 60L * 1000L)
+            }
+            appendInstallLog("CPU wake lock acquired for this installation (maximum 3 hours)")
+        } catch (e: Exception) {
+            appendInstallLog("Wake lock unavailable: ${e.message ?: e.javaClass.simpleName}")
+        }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(8), dp(18), dp(14))
@@ -442,11 +464,18 @@ class DistroCatalogActivity : Activity() {
             installPhase?.text = message
             appendInstallLog(message)
             installBar?.let { it.isIndeterminate = false; it.progress = 100 }
+            releaseInstallWakeLock()
             installProgress?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = true
         }
     }
 
+    private fun releaseInstallWakeLock() {
+        try { if (installWakeLock?.isHeld == true) installWakeLock?.release() } catch (_: Exception) { }
+        installWakeLock = null
+    }
+
     private fun dismissInstallProgress() {
+        releaseInstallWakeLock()
         installProgress?.dismiss(); installProgress = null
         installPhase = null; installLog = null; installBar = null
     }
