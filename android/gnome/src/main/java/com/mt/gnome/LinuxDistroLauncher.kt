@@ -17,9 +17,9 @@ internal object LinuxDistroLauncher {
             chmod 700 /run/user/0
             command -v gnome-terminal >/dev/null 2>&1 || { echo 'gnome-terminal executable not found'; exit 127; }
             if command -v dbus-run-session >/dev/null 2>&1; then
-                nohup dbus-run-session -- gnome-terminal --disable-factory >/tmp/mt-gnome-terminal.log 2>&1 </dev/null &
+                nohup dbus-run-session -- gnome-terminal >/tmp/mt-gnome-terminal.log 2>&1 </dev/null &
             else
-                nohup gnome-terminal --disable-factory >/tmp/mt-gnome-terminal.log 2>&1 </dev/null &
+                nohup gnome-terminal >/tmp/mt-gnome-terminal.log 2>&1 </dev/null &
             fi
             launch_pid=${'$'}!
             sleep 1
