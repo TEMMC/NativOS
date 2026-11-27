@@ -1462,17 +1462,11 @@ class GnomeHomeActivity : Activity() {
     }
 
     private fun applyOrientationPreference() {
-        val selected = prefs.getString("orientation", "landscape")
-        requestedOrientation = when (selected) {
-            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            "system" -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        }
-        // Keep the device rotation aligned when an external app is launched in freeform.
+        // MT-GNOME is designed as a landscape-first desktop. Keep the launcher
+        // and Android window manager rotation aligned for its child tools too.
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         Thread {
-            val rotation = when (selected) { "portrait" -> 0; "landscape" -> 1; else -> -1 }
-            val command = if (rotation < 0) "settings put system accelerometer_rotation 1"
-                else "settings put system accelerometer_rotation 0 && settings put system user_rotation $rotation"
+            val command = "settings put system accelerometer_rotation 0 && settings put system user_rotation 1"
             RootWindowBridge(this).runRoot(command)
         }.apply { isDaemon = true; name = "MT-GNOME-Orientation"; start() }
     }
