@@ -52,7 +52,7 @@ internal object LinuxDistroLauncher {
         return runCommand(id, command, 45)
     }
 
-    fun runCommand(id: String, command: String, timeoutSeconds: Long = 1800): Pair<Int, String> {
+    fun runCommand(id: String, command: String, timeoutSeconds: Long = 1800, onOutput: (String) -> Unit = {}): Pair<Int, String> {
         val rootPath = root(id)
         val bbPath = "/data/adb/magisk/busybox"
         val inner = """
@@ -93,7 +93,10 @@ internal object LinuxDistroLauncher {
             val reader = Thread {
                 try {
                     process.inputStream.bufferedReader().useLines { lines ->
-                        lines.forEach { synchronized(output) { output.append(it).append('\n') } }
+                        lines.forEach { line ->
+                            synchronized(output) { output.append(line).append('\n') }
+                            try { onOutput(line) } catch (_: Exception) { }
+                        }
                     }
                 } catch (_: Exception) { }
             }.apply { isDaemon = true; start() }
