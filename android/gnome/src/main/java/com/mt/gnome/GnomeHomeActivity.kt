@@ -951,7 +951,7 @@ class GnomeHomeActivity : Activity() {
         val nav=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(36,38,49),12); setPadding(dp(4),dp(4),dp(4),dp(4)) }
         val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(10),0,0,0) }
         val scroll=ScrollView(this).apply { isFillViewport=true }; scroll.addView(panel)
-        body.addView(nav,LinearLayout.LayoutParams(dp(108),-1)); body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
+        val navScroll = ScrollView(this).apply { isFillViewport = true; addView(nav) }\n        body.addView(navScroll,LinearLayout.LayoutParams(dp(108),-1)); body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
         root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
         fun page(title:String,desc:String) { panel.removeAllViews(); panel.addView(label(title,17,Color.WHITE,true)); panel.addView(label(desc,10,muted).apply { setPadding(0,dp(3),0,dp(12)) }) }
         fun item(title:String,desc:String="",click:()->Unit) {
@@ -1139,7 +1139,14 @@ class GnomeHomeActivity : Activity() {
             page("System & Security","Root access, Android permissions and optional command-line utilities")
             item("Root access","Authorize or verify Magisk integration") { enableLinuxWindows() }
             item("BusyBox prerequisite","Check whether the BusyBox binary provided by your Magisk module is available to MT-GNOME. BusyBox is needed for the supported root-assisted distribution utility workflow; it does not replace the private mount namespace or make unsafe commands safe.") { checkBusyBox() }
-            item("Android app permissions","Review permissions in Android settings") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName"))) }
+            item("Notification permission","Allow MT-GNOME to show installation and desktop notifications") {
+                if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 8112)
+                else toast("Notification permission is already granted")
+            }
+            item("Display over other apps","Grant special access for the floating app bar and pointer") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
+            item("Accessibility service","Enable MT-GNOME Pointer under Installed services") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            item("Notification access","Grant notification-listener access through Android") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+            item("Android app permissions","Review and grant available runtime permissions") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
             item("System settings","Open Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }
         navItem("About") { page("About MT-GNOME","MT-OS desktop shell"); item("Version","0.5.0-alpha") {}; item("Developer","Tinotenda Enock Mapfumo") {}; item("Device","${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}") {} }
