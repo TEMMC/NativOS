@@ -290,6 +290,7 @@ class DistroCatalogActivity : Activity() {
                     dismissInstallProgress(); busy = false; showCatalogue()
                 }
             } catch (e: Exception) {
+                appendInstallLog("ERROR: ${e.message ?: e.toString()}")
                 archive?.delete()
                 rootExec("rm -rf '$alpineRoot.installing'")
                 runOnUiThread {
