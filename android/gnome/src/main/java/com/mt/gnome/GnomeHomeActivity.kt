@@ -1146,7 +1146,6 @@ class GnomeHomeActivity : Activity() {
             }
             item("Display over other apps","Grant special access for the floating app bar and pointer") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
             item("Accessibility service","Enable MT-GNOME Pointer under Installed services") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-            item("Notification access","Grant notification-listener access through Android") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
             item("Android app permissions","Review and grant available runtime permissions") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
             item("System settings","Open Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }
