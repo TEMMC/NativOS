@@ -63,7 +63,8 @@ internal object LinuxDistroLauncher {
             mkdir -p "${'$'}R/dev" "${'$'}R/proc" "${'$'}R/sys" "${'$'}R/run" "${'$'}R/tmp"
             "${'$'}BB" mount -t tmpfs -o mode=755,nosuid tmpfs "${'$'}R/dev"
             for spec in "null 1 3" "zero 1 5" "full 1 7" "random 1 8" "urandom 1 9" "tty 5 0"; do
-                set -- ${' "${'$'}R/dev/${'$'}1" c "${'$'}2" "${'$'}3"
+                set -- ${'$'}spec
+                "${'$'}BB" mknod "${'$'}R/dev/${'$'}1" c "${'$'}2" "${'$'}3"
                 chmod 666 "${'$'}R/dev/${'$'}1"
                 "${'$'}BB" mount --bind "/dev/${'$'}1" "${'$'}R/dev/${'$'}1"
             done
