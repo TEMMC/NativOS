@@ -97,34 +97,58 @@ class LockSecurityActivity : Activity() {
     private fun showCredentialSetup() {
         content.removeAllViews()
         content.addView(TextView(this).apply {
-            text = "Set a new $selectedMode"
+            text = "Set a new " + selectedMode
             setTextColor(Color.WHITE); textSize = 16f; gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(12))
         })
-        credential = EditText(this).apply {
-            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
-            hint = when (selectedMode) {
-                "pin" -> "At least 4 digits"
-                else -> "Enter $selectedMode"
+        if (selectedMode == "pattern") {
+            pattern.clear()
+            patternLabel = TextView(this).apply {
+                text = "Tap at least four dots to create your pattern"
+                setTextColor(Color.WHITE); textSize = 13f; gravity = Gravity.CENTER
             }
-            inputType = when (selectedMode) {
-                "pin" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-                else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            content.addView(patternLabel)
+            val grid = GridLayout(this).apply { columnCount = 3; rowCount = 3 }
+            repeat(9) { index ->
+                grid.addView(actionButton("●") {
+                    val node = (index + 1).toString()
+                    if (!pattern.contains(node)) pattern.append(node)
+                    patternLabel.text = "Pattern: " + "● ".repeat(pattern.length)
+                }, GridLayout.LayoutParams().apply {
+                    width = dp(66); height = dp(58)
+                    setMargins(dp(3), dp(3), dp(3), dp(3))
+                    rowSpec = GridLayout.spec(index / 3)
+                    columnSpec = GridLayout.spec(index % 3)
+                })
             }
-            isSingleLine = true
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            content.addView(grid)
+            content.addView(actionButton("Clear pattern") {
+                pattern.clear()
+                patternLabel.text = "Tap at least four dots to create your pattern"
+            })
+        } else {
+            credential = EditText(this).apply {
+                setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+                hint = if (selectedMode == "pin") "At least 4 digits" else "Enter password"
+                inputType = if (selectedMode == "pin")
+                    InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                isSingleLine = true
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+            }
+            content.addView(credential, LinearLayout.LayoutParams(-1, dp(52)))
         }
-        content.addView(credential, LinearLayout.LayoutParams(-1, dp(52)))
         content.addView(actionButton("Save lock") {
-            val value = credential.text.toString()
+            val value = if (selectedMode == "pattern") pattern.toString() else credential.text.toString()
             if (selectedMode == "pin" && (value.length < 4 || !value.all { it.isDigit() })) {
                 status.text = "PIN must contain at least 4 digits."
             } else if (value.length < 4) {
-                status.text = "Use at least 4 characters."
+                status.text = if (selectedMode == "pattern") "Connect at least four dots." else "Use at least 4 characters."
             } else {
                 saveCredential(value)
-                prefs.edit().putString(KEY_MODE, selectedMode).putBoolean(KEY_ENABLED, true).apply()
-                Toast.makeText(this, "$selectedMode lock enabled", Toast.LENGTH_SHORT).show()
+                prefs.edit().putString(KEY_MODE, selectedMode).putBoolean(KEY_ENABLED, true)
+                    .putBoolean(KEY_SESSION_UNLOCKED, true).apply()
+                Toast.makeText(this, selectedMode + " lock enabled", Toast.LENGTH_SHORT).show()
                 finish()
             }
         }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(12) })
