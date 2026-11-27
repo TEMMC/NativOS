@@ -951,7 +951,8 @@ class GnomeHomeActivity : Activity() {
         val nav=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(36,38,49),12); setPadding(dp(4),dp(4),dp(4),dp(4)) }
         val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(10),0,0,0) }
         val scroll=ScrollView(this).apply { isFillViewport=true }; scroll.addView(panel)
-        val navScroll = ScrollView(this).apply { isFillViewport = true; addView(nav) }\n        body.addView(navScroll,LinearLayout.LayoutParams(dp(108),-1)); body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
+        val navScroll = ScrollView(this).apply { isFillViewport = true; addView(nav) }
+        body.addView(navScroll,LinearLayout.LayoutParams(dp(108),-1)); body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
         root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
         fun page(title:String,desc:String) { panel.removeAllViews(); panel.addView(label(title,17,Color.WHITE,true)); panel.addView(label(desc,10,muted).apply { setPadding(0,dp(3),0,dp(12)) }) }
         fun item(title:String,desc:String="",click:()->Unit) {
