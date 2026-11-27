@@ -2,7 +2,7 @@ package com.mt.gnome
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.ProgressDialog
+import android.widget.ProgressBar
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -28,7 +28,12 @@ class DistroCatalogActivity : Activity() {
     private val alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/"
     private val prefs by lazy { getSharedPreferences("mt_terminal", MODE_PRIVATE) }
     private var busy = false
-    private var installProgress: ProgressDialog? = null
+    private var installProgress: AlertDialog? = null
+    private var installPhase: TextView? = null
+    private var installLog: TextView? = null
+    private var installBar: ProgressBar? = null
+    private val installLogBuffer = StringBuilder()
+    private var lastProgressLogBytes = 0L
     private lateinit var cards: LinearLayout
     private lateinit var status: TextView
 
@@ -256,6 +261,7 @@ class DistroCatalogActivity : Activity() {
             var archive: File? = null
             try {
                 val url = alpineUrl + archiveName
+                updateInstallPhase("Connecting to Alpine download server…")
                 val checksumText = fetchText(url + ".sha256")
                 val expected = Regex("(?i)\\b[0-9a-f]{64}\\b").find(checksumText)?.value
                     ?: error("Official SHA-256 file did not contain a digest")
@@ -323,36 +329,62 @@ class DistroCatalogActivity : Activity() {
 
     private fun showInstallProgress(title: String) {
         runOnUiThread {
-            installProgress = ProgressDialog(this).apply {
-                setTitle(title)
-                setMessage("Preparing download…")
-                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-                max = 100
-                progress = 0
-                setCancelable(false)
-                setCanceledOnTouchOutside(false)
-                show()
+            installLogBuffer.setLength(0)
+            lastProgressLogBytes = 0L
+            val panel = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(18), dp(8), dp(18), dp(14))
+                setBackgroundColor(Color.rgb(24, 29, 40))
             }
+            installPhase = TextView(this).apply { text = "Starting…"; textSize = 13f; setTextColor(Color.WHITE); setPadding(0, 0, 0, dp(8)) }
+            installBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 0; isIndeterminate = true }
+            val logTitle = TextView(this).apply { text = "INSTALLATION LOG"; textSize = 10f; setTextColor(Color.rgb(130, 190, 255)); setPadding(0, dp(12), 0, dp(5)) }
+            installLog = TextView(this).apply { text = "Waiting for installer…"; textSize = 11f; typeface = android.graphics.Typeface.MONOSPACE; setTextColor(Color.rgb(205, 216, 232)); setPadding(dp(8), dp(8), dp(8), dp(8)) }
+            val logScroll = ScrollView(this).apply { isFillViewport = true; addView(installLog) }
+            panel.addView(installPhase)
+            panel.addView(installBar, LinearLayout.LayoutParams(-1, dp(8)))
+            panel.addView(logTitle)
+            panel.addView(logScroll, LinearLayout.LayoutParams(-1, dp(230)))
+            installProgress = AlertDialog.Builder(this).setTitle(title).setView(panel).setCancelable(false).create()
+            installProgress?.show()
+            installProgress?.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), -2)
+            appendInstallLog("Installer started")
+        }
+    }
+
+    private fun appendInstallLog(message: String) {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            val line = message.trim().take(1200)
+            if (line.isBlank()) return@runOnUiThread
+            installLogBuffer.append(line).append('\n')
+            if (installLogBuffer.length > 24000) installLogBuffer.delete(0, installLogBuffer.length - 24000)
+            installLog?.text = installLogBuffer.toString()
+            installLog?.post { (installLog?.parent as? ScrollView)?.fullScroll(android.view.View.FOCUS_DOWN) }
         }
     }
 
     private fun updateInstallProgress(phase: String, done: Long, total: Long) {
         runOnUiThread {
-            installProgress?.let { dialog ->
-                dialog.setMessage(if (total > 0) "$phase — ${done / 1048576} / ${total / 1048576} MB" else "$phase — ${done / 1048576} MB")
-                if (total > 0) { dialog.isIndeterminate = false; dialog.progress = ((done * 100L) / total).toInt().coerceIn(0, 100) }
-                else dialog.isIndeterminate = true
+            installPhase?.text = if (total > 0) "$phase — ${done / 1048576} / ${total / 1048576} MB" else "$phase — ${done / 1048576} MB downloaded"
+            installBar?.let { bar ->
+                if (total > 0) { bar.isIndeterminate = false; bar.progress = ((done * 100L) / total).toInt().coerceIn(0, 100) }
+                else bar.isIndeterminate = true
+            }
+            if (done - lastProgressLogBytes >= 2097152L || (total > 0 && done >= total)) {
+                lastProgressLogBytes = done
+                appendInstallLog("$phase: ${done / 1048576} MB received")
             }
         }
     }
 
     private fun updateInstallPhase(message: String) {
-        runOnUiThread { installProgress?.let { it.isIndeterminate = true; it.setMessage(message) } }
+        runOnUiThread { installPhase?.text = message; installBar?.isIndeterminate = true; appendInstallLog(message) }
     }
 
     private fun dismissInstallProgress() {
-        installProgress?.dismiss()
-        installProgress = null
+        installProgress?.dismiss(); installProgress = null
+        installPhase = null; installLog = null; installBar = null
     }
 
     private fun sha256(file: File): String {
@@ -381,10 +413,13 @@ class DistroCatalogActivity : Activity() {
             val staging = "$target.installing"
             try {
                 val base = "https://images.linuxcontainers.org/images/$imagePath/"
+                updateInstallPhase("Contacting Linux Containers image server…")
                 val listing = fetchText(base)
+                updateInstallPhase("Finding the newest published ARM64 image…")
                 val stamps = Regex("href=[\\\"'](20[0-9]{6}_[0-9]{2}(?::|%3A)[0-9]{2}/)[\\\"']").findAll(listing).map { it.groupValues[1] }.toList().sorted()
                 val stamp = stamps.lastOrNull() ?: error("No published ARM64 build found for this distribution")
                 val buildUrl = base + stamp
+                updateInstallPhase("Fetching published SHA-256 checksum…")
                 val sums = fetchText(buildUrl + "SHA256SUMS")
                 val expected = Regex("(?im)^([0-9a-f]{64})\\s+\\*?rootfs\\.tar\\.xz\\s*$").find(sums)?.groupValues?.get(1)
                     ?: error("Published SHA256SUMS does not include rootfs.tar.xz")
