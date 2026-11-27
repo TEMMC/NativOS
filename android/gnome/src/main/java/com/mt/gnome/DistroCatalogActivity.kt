@@ -207,8 +207,14 @@ class DistroCatalogActivity : Activity() {
                 if (busy) return@setPositiveButton
                 busy = true
                 showInstallProgress("Installing GNOME Terminal")
+                appendInstallLog("Preparing " + d.name + " package installation…")
+                appendInstallLog("Command: " + command)
                 Thread {
-                    val result = LinuxDistroLauncher.runCommand(d.id, command, 3600)
+                    updateInstallPhase("Starting package manager…")
+                    val result = LinuxDistroLauncher.runCommand(d.id, command, 3600) { line -> appendInstallLog(line) }
+                    appendInstallLog("Package manager exited with code " + result.first)
+                    if (result.second.isNotBlank() && result.first != 0) appendInstallLog(result.second)
+                    updateInstallPhase(if (result.first == 0) "Checking installed GNOME Terminal…" else "Installation failed")
                     val installedOk = result.first == 0 && distroState(d.id) == 2
                     runOnUiThread {
                         busy = false; dismissInstallProgress()
