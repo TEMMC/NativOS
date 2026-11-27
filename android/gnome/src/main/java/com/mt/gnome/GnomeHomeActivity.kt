@@ -54,6 +54,7 @@ class GnomeHomeActivity : Activity() {
     private data class LinuxDesktopApp(val distro: String, val name: String, val desktopId: String, val exec: String, val categories: String = "")
     private var linuxApps: List<LinuxDesktopApp> = emptyList()
     private var linuxScanRunning = false
+    private var lockScreenLaunching = false
     private val distroIds = listOf("alpine", "debian", "ubuntu", "arch", "fedora", "void", "kali", "nixos", "gentoo", "opensuse", "rocky", "openwrt")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,6 +84,13 @@ class GnomeHomeActivity : Activity() {
     override fun onResume() {
         super.onResume()
         enterDesktopMode()
+        if (prefs.getBoolean(LockSecurityActivity.KEY_ENABLED, false) &&
+            !prefs.getBoolean(LockSecurityActivity.KEY_SESSION_UNLOCKED, false) && !lockScreenLaunching) {
+            lockScreenLaunching = true
+            startActivityForResult(Intent(this, LockSecurityActivity::class.java)
+                .putExtra(LockSecurityActivity.EXTRA_LOCKED, true), 7302)
+            return
+        }
         if (android.provider.Settings.canDrawOverlays(this)) {
             try { startService(Intent(this, DesktopDockService::class.java)) } catch (_: Exception) {}
             if (prefs.getString("input_mode", "direct") == "trackpad") {
@@ -93,6 +101,31 @@ class GnomeHomeActivity : Activity() {
         if (::desktop.isInitialized) refreshLinuxApps()
         if (::resolution.isInitialized) updateResolution()
         if (::rootStatus.isInitialized) updateRootStatus()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (prefs.getBoolean(LockSecurityActivity.KEY_ENABLED, false)) {
+            prefs.edit().putBoolean(LockSecurityActivity.KEY_SESSION_UNLOCKED, false).apply()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 7302) {
+            lockScreenLaunching = false
+            if (resultCode != RESULT_OK && prefs.getBoolean(LockSecurityActivity.KEY_ENABLED, false)) {
+                desktop.post { if (!isFinishing) onResume() }
+            }
+        }
+        if(requestCode==wallpaperRequest && resultCode==RESULT_OK) {
+            val uri=data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                prefs.edit().putString("wallpaper_uri",uri.toString()).apply()
+                buildDesktop(); toast("Selected wallpaper applied")
+            } catch(e:Exception) { toast("Could not apply wallpaper: ${e.message}") }
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -211,10 +244,10 @@ class GnomeHomeActivity : Activity() {
         }
         if (showLinuxApps && prefs.getBoolean("show_linux_shortcuts", true)) linuxApps.forEach { app ->
             val key = "linux:${app.distro}:${app.desktopId}"
-            if (shortcuts.contains(key) && !hidden.contains(key)) addLinuxDesktopIcon(appGrid, app, key)
+            if (!hidden.contains(key)) addLinuxDesktopIcon(appGrid, app, key)
         }
         val scroller = ScrollView(this).apply { overScrollMode = View.OVER_SCROLL_NEVER; addView(appGrid) }
-        if (shortcuts.isEmpty()) {
+        if (shortcuts.isEmpty() && (!showLinuxApps || linuxApps.isEmpty())) {
             surface.addView(label("Your desktop is clean. Open Applications and choose “Add to desktop” to place shortcuts here.",
                 12, Color.WHITE).apply { gravity = Gravity.CENTER; setPadding(dp(20), dp(18), dp(20), dp(18)) })
         } else {
@@ -273,7 +306,22 @@ class GnomeHomeActivity : Activity() {
             setOnClickListener { launchLinuxApp(app) }
             setOnLongClickListener { confirmRemoveShortcut(key, app.name); true }
         }
-        cell.addView(label("🐧", prefs.getInt("desktop_icon_size", 42).coerceIn(28, 64), Color.WHITE, true).apply { gravity = Gravity.CENTER },
+        val glyph = when (linuxAppCategory(app)) {
+            "Information Gathering" -> "⌕"
+            "Vulnerability Analysis" -> "⚠"
+            "Web Application Analysis" -> "◎"
+            "Password Attacks" -> "⌑"
+            "Wireless Attacks" -> "⌁"
+            "Reverse Engineering" -> "⌘"
+            "Forensics" -> "◈"
+            "Development" -> "</>"
+            "Internet & Networking" -> "⇄"
+            "Multimedia" -> "♫"
+            "Office" -> "▤"
+            "System" -> "⚙"
+            else -> "🐉"
+        }
+        cell.addView(label(glyph, prefs.getInt("desktop_icon_size", 42).coerceIn(28, 64), Color.WHITE, true).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-1, dp(prefs.getInt("desktop_icon_size", 42).coerceIn(28, 64))))
         if (prefs.getBoolean("desktop_icon_labels", true)) cell.addView(label(app.name, 9, Color.WHITE, true).apply {
             gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
@@ -1181,6 +1229,18 @@ class GnomeHomeActivity : Activity() {
             }
             renderVisibility()
         }
+        navItem("Lock screen") {
+            page("Lock screen", "Protect the MT-GNOME desktop with a password, PIN or pattern. This is an app lock; Android device security remains separate.")
+            item("Configure desktop lock", "Choose Password, PIN, Pattern or None. Credentials are stored as salted hashes.") {
+                startActivity(Intent(this, LockSecurityActivity::class.java))
+            }
+            item("Lock now", "Immediately require your configured credential") {
+                if (prefs.getBoolean(LockSecurityActivity.KEY_ENABLED, false)) {
+                    prefs.edit().putBoolean(LockSecurityActivity.KEY_SESSION_UNLOCKED, false).apply()
+                    startActivity(Intent(this, LockSecurityActivity::class.java).putExtra(LockSecurityActivity.EXTRA_LOCKED, true))
+                } else toast("Configure a password, PIN or pattern first")
+            }
+        }
         navItem("System & Security") {
             page("System & Security","Root access, Android permissions and optional command-line utilities")
             item("Root access","Authorize or verify Magisk integration") { enableLinuxWindows() }
@@ -1228,18 +1288,6 @@ class GnomeHomeActivity : Activity() {
         dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         dialog.window?.attributes=dialog.window?.attributes?.apply { gravity=Gravity.CENTER; dimAmount=.42f }
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-    }
-
-    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
-        super.onActivityResult(requestCode,resultCode,data)
-        if(requestCode==wallpaperRequest && resultCode==RESULT_OK) {
-            val uri=data?.data ?: return
-            try {
-                contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                prefs.edit().putString("wallpaper_uri",uri.toString()).apply()
-                buildDesktop(); toast("Selected wallpaper applied")
-            } catch(e:Exception) { toast("Could not apply wallpaper: ${e.message}") }
-        }
     }
 
     // Lightweight offline theme palette: dock, controls and accent colours only.
