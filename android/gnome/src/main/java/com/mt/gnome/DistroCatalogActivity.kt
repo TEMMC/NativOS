@@ -387,10 +387,25 @@ class DistroCatalogActivity : Activity() {
         panel.addView(installBar, LinearLayout.LayoutParams(-1, dp(8)))
         panel.addView(logTitle)
         panel.addView(logScroll, LinearLayout.LayoutParams(-1, dp(230)))
-        installProgress = AlertDialog.Builder(this).setTitle(title).setView(panel).setCancelable(false).create()
+        installProgress = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(panel)
+            .setCancelable(false)
+            .setPositiveButton("Close", null)
+            .create()
+        installProgress?.setOnShowListener {
+            installProgress?.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+                isEnabled = false
+                setOnClickListener {
+                    dismissInstallProgress()
+                    showCatalogue()
+                }
+            }
+        }
         installProgress?.show()
         installProgress?.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), -2)
         appendInstallLog("Installer window opened")
+        appendInstallLog("Progress and command output will remain visible until you close this window.")
     }
 
     private fun appendInstallLog(message: String) {
@@ -421,6 +436,16 @@ class DistroCatalogActivity : Activity() {
 
     private fun updateInstallPhase(message: String) {
         runOnUiThread { installPhase?.text = message; installBar?.isIndeterminate = true; appendInstallLog(message) }
+    }
+
+    private fun finishInstallProgress(message: String) {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            installPhase?.text = message
+            appendInstallLog(message)
+            installBar?.let { it.isIndeterminate = false; it.progress = 100 }
+            installProgress?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = true
+        }
     }
 
     private fun dismissInstallProgress() {
