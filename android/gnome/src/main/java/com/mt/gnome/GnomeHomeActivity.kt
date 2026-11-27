@@ -425,21 +425,23 @@ class GnomeHomeActivity : Activity() {
     private fun linuxAppCategory(app: LinuxDesktopApp): String {
         val categories = app.categories.lowercase(Locale.ROOT)
         val identity = (app.name + " " + app.desktopId).lowercase(Locale.ROOT)
+        fun has(vararg values: String) = values.any { categories.contains(it) || identity.contains(it) }
         return when {
-            listOf("information-gathering", "information_gathering", "reconnaissance").any { categories.contains(it) || identity.contains(it) } -> "Information Gathering"
-            listOf("vulnerability-analysis", "vulnerability_analysis").any { categories.contains(it) || identity.contains(it) } -> "Vulnerability Analysis"
-            listOf("web-application-analysis", "web_application_analysis").any { categories.contains(it) || identity.contains(it) } -> "Web Application Analysis"
-            listOf("database-assessment", "database_assessment").any { categories.contains(it) || identity.contains(it) } -> "Database Assessment"
-            listOf("password-attacks", "password_attacks", "password").any { categories.contains(it) || identity.contains(it) } -> "Password Attacks"
-            listOf("wireless-attacks", "wireless_attacks", "wireless").any { categories.contains(it) || identity.contains(it) } -> "Wireless Attacks"
-            listOf("reverse-engineering", "reverse_engineering").any { categories.contains(it) || identity.contains(it) } -> "Reverse Engineering"
-            listOf("exploitation-tools", "exploitation_tools", "exploit").any { categories.contains(it) || identity.contains(it) } -> "Exploitation Tools"
-            listOf("sniffing-spoofing", "sniffing_spoofing", "sniffer").any { categories.contains(it) || identity.contains(it) } -> "Sniffing & Spoofing"
-            listOf("post-exploitation", "post_exploitation").any { categories.contains(it) || identity.contains(it) } -> "Post Exploitation"
-            listOf("forensics", "forensic").any { categories.contains(it) || identity.contains(it) } -> "Forensics"
-            listOf("reporting", "report").any { categories.contains(it) || identity.contains(it) } -> "Reporting"
-            listOf("social-engineering", "social_engineering").any { categories.contains(it) || identity.contains(it) } -> "Social Engineering"
-            listOf("system-services", "system_services").any { categories.contains(it) || identity.contains(it) } -> "System Services"
+            has("information-gathering", "information_gathering", "information gathering", "reconnaissance", "01-") -> "Information Gathering"
+            has("vulnerability-analysis", "vulnerability_analysis", "vulnerability analysis", "02-") -> "Vulnerability Analysis"
+            has("web-application-analysis", "web_application_analysis", "web application analysis", "03-") -> "Web Application Analysis"
+            has("database-assessment", "database_assessment", "database assessment", "04-") -> "Database Assessment"
+            has("password-attacks", "password_attacks", "password attacks", "05-") -> "Password Attacks"
+            has("wireless-attacks", "wireless_attacks", "wireless attacks", "06-") -> "Wireless Attacks"
+            has("reverse-engineering", "reverse_engineering", "reverse engineering", "07-") -> "Reverse Engineering"
+            has("exploitation-tools", "exploitation_tools", "exploitation tools", "08-") -> "Exploitation Tools"
+            has("sniffing-spoofing", "sniffing_spoofing", "sniffing & spoofing", "09-") -> "Sniffing & Spoofing"
+            has("post-exploitation", "post_exploitation", "post exploitation", "10-") -> "Post Exploitation"
+            has("forensics", "forensic", "11-") -> "Forensics"
+            has("reporting", "report", "12-") -> "Reporting"
+            has("social-engineering", "social_engineering", "social engineering", "13-") -> "Social Engineering"
+            has("system-services", "system_services", "system services", "14-") -> "System Services"
+            has("hardware-hacking", "hardware_hacking", "hardware hacking", "15-") -> "Hardware Hacking"
             categories.contains("security") || categories.contains("pentest") -> "Security Tools"
             categories.contains("development") || categories.contains("ide") -> "Development"
             categories.contains("network") || categories.contains("webbrowser") -> "Internet & Networking"
@@ -491,7 +493,7 @@ class GnomeHomeActivity : Activity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             background = rounded(Color.rgb(25, 29, 39), 18)
         }
-        root.addView(label("Applications", 20, Color.WHITE, true).apply { setPadding(dp(4), dp(4), dp(4), dp(8)) })
+        root.addView(label(if (linuxApps.any { it.distro == "kali" }) "KALI LINUX  ·  APPLICATIONS" else "Applications", 20, Color.WHITE, true).apply { setPadding(dp(4), dp(4), dp(4), dp(8)) })
         val searchBox = EditText(this).apply {
             hint = "Search applications…"
             isSingleLine = true
