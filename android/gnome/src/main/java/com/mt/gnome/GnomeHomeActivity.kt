@@ -952,16 +952,26 @@ class GnomeHomeActivity : Activity() {
         root.addView(label("Desktop configuration",10,muted).apply { setPadding(0,dp(4),0,dp(10)) })
         body=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
         val nav=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(36,38,49),12); setPadding(dp(4),dp(4),dp(4),dp(4)) }
-        val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(10),0,0,0) }
+        val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(10),0,dp(5),dp(12)) }
         val scroll=ScrollView(this).apply {
-            isFillViewport = false
+            isFillViewport = true
+            isSmoothScrollingEnabled = true
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+            clipToPadding = false
             addView(panel, ScrollView.LayoutParams(-1, -2))
         }
-        val navScroll = ScrollView(this).apply { isFillViewport = true; addView(nav) }
-        body.addView(navScroll,LinearLayout.LayoutParams(dp(108),-1)); body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
+        val navScroll = ScrollView(this).apply {
+            isFillViewport = true
+            isSmoothScrollingEnabled = true
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            clipToPadding = false
+            addView(nav, ScrollView.LayoutParams(-1, -2))
+        }
+        body.addView(navScroll,LinearLayout.LayoutParams(dp(108),-1))
+        body.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
         root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
         fun page(title:String,desc:String) { panel.removeAllViews(); panel.addView(label(title,17,Color.WHITE,true)); panel.addView(label(desc,10,muted).apply { setPadding(0,dp(3),0,dp(12)) }) }
         fun item(title:String,desc:String="",click:()->Unit) {
@@ -1097,6 +1107,14 @@ class GnomeHomeActivity : Activity() {
             }
             item("Display over other apps","Allow the floating app bar and pointer overlay") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
             item("Accessibility service","Enable MT-GNOME Pointer for pointer clicks and gestures") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            item("Usage access","Allow optional app-usage insights through Android's special access screen") {
+                try { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$packageName"))) }
+                catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+            }
+            item("Modify system settings","Allow supported desktop controls to change permitted system settings") {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))) }
+                catch (_: Exception) { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
+            }
             item("Allow background downloads","Open Android's battery-optimisation exemption screen so long Linux downloads are less likely to be paused") {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     try { startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) }
