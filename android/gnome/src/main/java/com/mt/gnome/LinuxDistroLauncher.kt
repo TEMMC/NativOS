@@ -88,7 +88,10 @@ internal object LinuxDistroLauncher {
             exec unshare -m /system/bin/sh -c ${quote(inner)} _ "${'$'}BB" ${quote(rootPath)} ${quote(command)}
         """.trimIndent()
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf(resolveSu(), "-c", "exec 2>&1; $script"))
+            val suPath = resolveSu()
+            try { onOutput("Requesting root authorization through Magisk…") } catch (_: Exception) { }
+            try { onOutput("Starting isolated Linux command for $id…") } catch (_: Exception) { }
+            val process = Runtime.getRuntime().exec(arrayOf(suPath, "-c", "exec 2>&1; $script"))
             val output = StringBuilder()
             val reader = Thread {
                 try {
@@ -109,7 +112,9 @@ internal object LinuxDistroLauncher {
             reader.join(1500)
             Pair(process.exitValue(), synchronized(output) { output.toString() })
         } catch (e: Exception) {
-            Pair(126, e.message ?: e.toString())
+            val message = e.message ?: e.toString()
+            try { onOutput("ROOT / LAUNCH ERROR: $message") } catch (_: Exception) { }
+            Pair(126, message)
         }
     }
 
